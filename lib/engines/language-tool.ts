@@ -1,0 +1,69 @@
+import { makeErrorId, type CheckError, type ErrorKind } from '../errors';
+import type { Engine } from '../engine';
+
+export interface LanguageToolConfig {
+  apiUrl: string;
+  language: string;
+}
+
+interface LanguageToolMatch {
+  message: string;
+  shortMessage: string;
+  offset: number;
+  length: number;
+  replacements: { value: string }[];
+  rule: {
+    issueType?: string;
+    category: { id: string; name: string };
+  };
+}
+
+interface LanguageToolResponse {
+  matches: LanguageToolMatch[];
+}
+
+export function createLanguageToolEngine(config: LanguageToolConfig): Engine {
+  return {
+    async check(text: string): Promise<CheckError[]> {
+      const response = await fetch(`${config.apiUrl}/v2/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ text, language: config.language }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`LanguageTool request failed: ${response.status}`);
+      }
+
+      const data = (await response.json()) as LanguageToolResponse;
+      return data.matches.map((match) => toCheckError(text, match));
+    },
+  };
+}
+
+function toCheckError(text: string, match: LanguageToolMatch): CheckError {
+  const start = match.offset;
+  const end = match.offset + match.length;
+  const kind = kindFromIssueType(match.rule.issueType);
+  return {
+    id: makeErrorId(kind, text.slice(start, end)),
+    start,
+    end,
+    kind,
+    type: match.shortMessage || match.rule.category.name,
+    explanation: match.message,
+    suggestions: match.replacements.map((r) => r.value),
+    source: 'languagetool',
+  };
+}
+
+function kindFromIssueType(issueType: string | undefined): ErrorKind {
+  switch (issueType) {
+    case 'misspelling':
+      return 'spelling';
+    case 'grammar':
+      return 'grammar';
+    default:
+      return 'wording';
+  }
+}

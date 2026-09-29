@@ -82,7 +82,9 @@ export class FieldOverlay {
 
     this.el.style.top = `${rect.top}px`;
     this.el.style.left = `${rect.left}px`;
-    this.el.style.width = `${rect.width}px`;
+    // Exclude the textarea's scrollbar so text wraps at the same column.
+    const borders = parseFloat(computed.borderLeftWidth) + parseFloat(computed.borderRightWidth);
+    this.el.style.width = `${this.field.clientWidth + borders}px`;
     this.el.style.height = `${rect.height}px`;
 
     for (const prop of MIRROR_PROPERTIES) {
@@ -114,9 +116,9 @@ export class FieldOverlay {
       this.el.appendChild(span);
       cursor = error.end;
     }
-    if (cursor < text.length) {
-      this.el.appendChild(document.createTextNode(text.slice(cursor)));
-    }
+    // A trailing newline adds an empty line in a textarea but not in a div; the
+    // zero-width char keeps both the same scroll height.
+    this.el.appendChild(document.createTextNode(`${text.slice(cursor)}​`));
   }
 }
 

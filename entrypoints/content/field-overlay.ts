@@ -30,7 +30,7 @@ const MIRROR_PROPERTIES = [
 
 /**
  * Mirrors a textarea's box and typography in a same-sized, invisible-text
- * overlay so wavy underline spans land exactly under the right characters.
+ * overlay so underline spans land exactly under the right characters.
  * Positioned with `fixed` + the field's own bounding rect, rather than as a
  * positioned sibling, so it never touches the host page's layout or CSS.
  */
@@ -108,9 +108,9 @@ export class FieldOverlay {
       const span = document.createElement('span');
       span.textContent = text.slice(error.start, error.end);
       span.style.textDecorationLine = 'underline';
-      span.style.textDecorationStyle = 'wavy';
+      span.style.textDecorationStyle = 'solid';
       span.style.textDecorationColor = colorForKind(error.kind);
-      span.style.textDecorationThickness = '2px';
+      span.style.textDecorationThickness = '3px';
       this.el.appendChild(span);
       cursor = error.end;
     }

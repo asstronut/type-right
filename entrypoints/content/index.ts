@@ -1,13 +1,24 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { browser } from 'wxt/browser';
 import { FieldOverlay } from './field-overlay';
+import { createFieldChecker, type FieldChecker } from '../../lib/checker';
+import { RateLimitedError, type Engine } from '../../lib/engine';
 import type { CheckFieldMessage, CheckFieldResponse } from '../../lib/messages';
 
-const CHECK_DEBOUNCE_MS = 600;
+/** Runs LanguageTool in the background worker, via message, as a plain Engine. */
+const languageTool: Engine = {
+  async check(text) {
+    const message: CheckFieldMessage = { type: 'check-field', text };
+    const response = (await browser.runtime.sendMessage(message)) as CheckFieldResponse | undefined;
+    if (response?.ok) return response.errors;
+    if (response && response.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
+    throw new Error('LanguageTool check failed');
+  },
+};
 
 interface FieldState {
   overlay: FieldOverlay;
-  timer: ReturnType<typeof setTimeout> | undefined;
+  checker: FieldChecker;
 }
 
 export default defineContentScript({
@@ -17,34 +28,19 @@ export default defineContentScript({
 
     function attach(field: HTMLTextAreaElement): void {
       if (fields.has(field)) return;
-      fields.set(field, { overlay: new FieldOverlay(field), timer: undefined });
-      field.addEventListener('input', () => scheduleCheck(field));
-    }
-
-    function scheduleCheck(field: HTMLTextAreaElement): void {
-      const state = fields.get(field);
-      if (!state) return;
-      if (state.timer) clearTimeout(state.timer);
-      state.timer = setTimeout(() => void runCheck(field), CHECK_DEBOUNCE_MS);
-    }
-
-    async function runCheck(field: HTMLTextAreaElement): Promise<void> {
-      const state = fields.get(field);
-      if (!state) return;
-      const { overlay } = state;
-
-      const text = field.value;
-      if (!text.trim()) {
-        overlay.clear();
-        return;
-      }
-
-      const message: CheckFieldMessage = { type: 'check-field', text };
-      const response = (await browser.runtime.sendMessage(message)) as
-        | CheckFieldResponse
-        | undefined;
-      if (!response) return;
-      overlay.render(text, response.errors);
+      const overlay = new FieldOverlay(field);
+      const checker = createFieldChecker({
+        engines: { languageTool },
+        onChange: (errors) => overlay.render(field.value, errors),
+      });
+      fields.set(field, { overlay, checker });
+      field.addEventListener('input', () => {
+        // Render shifted/trimmed underlines on every keystroke; the debounced
+        // re-check then fills in anything new.
+        overlay.render(field.value, checker.update(field.value));
+      });
+      // Pre-filled fields (e.g. edit forms) get checked once without waiting for a keystroke.
+      if (field.value) overlay.render(field.value, checker.update(field.value));
     }
 
     function attachAllWithin(root: ParentNode): void {

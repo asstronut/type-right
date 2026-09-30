@@ -1,5 +1,5 @@
 import { makeErrorId, type CheckError, type ErrorKind } from '../errors';
-import type { Engine } from '../engine';
+import { RateLimitedError, type Engine } from '../engine';
 
 export interface LanguageToolConfig {
   apiUrl: string;
@@ -31,6 +31,9 @@ export function createLanguageToolEngine(config: LanguageToolConfig): Engine {
         body: new URLSearchParams({ text, language: config.language }),
       });
 
+      if (response.status === 429) {
+        throw new RateLimitedError(parseRetryAfterMs(response.headers.get('Retry-After')));
+      }
       if (!response.ok) {
         throw new Error(`LanguageTool request failed: ${response.status}`);
       }
@@ -66,4 +69,9 @@ function kindFromIssueType(issueType: string | undefined): ErrorKind {
     default:
       return 'wording';
   }
+}
+
+function parseRetryAfterMs(header: string | null): number | undefined {
+  const seconds = Number(header);
+  return header && Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
 }

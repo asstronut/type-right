@@ -24,6 +24,7 @@ export interface FieldChecker {
 
 const DEFAULT_DEBOUNCE_MS = 600;
 const DEFAULT_RETRY_MS = 30_000;
+const MIN_RETRY_MS = 1_000;
 /** LanguageTool's free tier rejects requests over 20k characters. */
 const MAX_REQUEST_CHARS = 20_000;
 
@@ -95,7 +96,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
           found = await options.engines.languageTool.check(paragraphText);
         } catch (error) {
           if (error instanceof RateLimitedError) {
-            blockedUntil = Date.now() + (error.retryAfterMs ?? DEFAULT_RETRY_MS);
+            blockedUntil = Date.now() + Math.max(error.retryAfterMs ?? DEFAULT_RETRY_MS, MIN_RETRY_MS);
             if (version === startVersion && dirty) dirty = { ...dirty, start: paragraph.start };
             schedule(0);
           }
@@ -184,7 +185,7 @@ function splitParagraphs(text: string): Range[] {
       let to = Math.min(end, from + MAX_REQUEST_CHARS);
       if (to < end) {
         const cut = text.lastIndexOf(' ', to);
-        if (cut > from) to = cut;
+        if (cut > from) to = cut + 1;
       }
       paragraphs.push({ start: from, end: to });
       if (to >= end) break;

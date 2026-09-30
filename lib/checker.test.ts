@@ -292,6 +292,17 @@ describe('createFieldChecker', () => {
       expect(sentTexts()).toEqual(['I will recieve it!']);
     });
 
+    it('never retries in a tight loop when Retry-After is 0', async () => {
+      const field = setup();
+      rateLimitOnce('0');
+      await field.type('I will recieve it');
+      fetchMock.mockClear();
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('retries after a default delay when the response has no Retry-After', async () => {
       const field = setup();
       rateLimitOnce();

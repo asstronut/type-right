@@ -113,6 +113,8 @@ export class FieldOverlay {
       span.style.textDecorationStyle = 'solid';
       span.style.textDecorationColor = colorForKind(error.kind);
       span.style.textDecorationThickness = '3px';
+      // Default "auto" breaks the line around descenders (y, g, p...), which looks like a cut-off underline.
+      span.style.textDecorationSkipInk = 'none';
       this.el.appendChild(span);
       cursor = error.end;
     }

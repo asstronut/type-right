@@ -5,6 +5,7 @@ export interface CheckFieldMessage {
   text: string;
 }
 
-export interface CheckFieldResponse {
-  errors: CheckError[];
-}
+export type CheckFieldResponse =
+  | { ok: true; errors: CheckError[] }
+  | { ok: false; reason: 'rate-limited'; retryAfterMs?: number }
+  | { ok: false; reason: 'failed' };

@@ -3,7 +3,7 @@ import type { LanguageToolConfig } from './engines/language-tool';
 export type EnglishVariant = 'en-US' | 'en-GB';
 
 export interface Settings {
-  /** GLM (Zhipu AI) API key for the LLM engine; empty until the user enters one. */
+  /** API key for the LLM engine's provider; empty until the user enters one. */
   llmApiKey: string;
   englishVariant: EnglishVariant;
   languageToolUrl: string;

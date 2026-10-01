@@ -32,7 +32,8 @@ export default defineContentScript({
     const site = { hostname, settings: () => settings };
 
     const hover = new HoverController();
-    let session: (() => void) | null = null;
+    /** Undoes `start()` while Type Right is running on this page. */
+    let stop: (() => void) | null = null;
 
     /** Attaches to every textarea on the page; returns a function that removes all trace of it. */
     function start(): () => void {
@@ -97,11 +98,11 @@ export default defineContentScript({
     // Options page takes effect without reloading the page.
     function apply(): void {
       const disabled = isSiteDisabled(hostname, settings);
-      if (disabled && session) {
-        session();
-        session = null;
-      } else if (!disabled && !session) {
-        session = start();
+      if (disabled && stop) {
+        stop();
+        stop = null;
+      } else if (!disabled && !stop) {
+        stop = start();
       }
     }
 

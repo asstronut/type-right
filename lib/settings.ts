@@ -3,7 +3,7 @@ import type { LanguageToolConfig } from './engines/language-tool';
 export type EnglishVariant = 'en-US' | 'en-GB';
 
 export interface Settings {
-  /** Qwen API key for the LLM engine; empty until the user enters one. */
+  /** GLM (Zhipu AI) API key for the LLM engine; empty until the user enters one. */
   llmApiKey: string;
   englishVariant: EnglishVariant;
   languageToolUrl: string;
@@ -28,7 +28,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
   const value = raw ?? {};
   return {
     llmApiKey: typeof value.llmApiKey === 'string' ? value.llmApiKey.trim() : DEFAULT_SETTINGS.llmApiKey,
-    englishVariant: value.englishVariant === 'en-GB' ? 'en-GB' : 'en-US',
+    englishVariant: value.englishVariant === 'en-GB' || value.englishVariant === 'en-US' ? value.englishVariant : DEFAULT_SETTINGS.englishVariant,
     languageToolUrl: normalizeUrl(value.languageToolUrl) ?? DEFAULT_LANGUAGE_TOOL_URL,
     excludedSites: normalizeSites(value.excludedSites),
     disabledSites: normalizeSites(value.disabledSites),

@@ -4,13 +4,13 @@ import { store } from '../../lib/store';
 
 const form = document.querySelector<HTMLFormElement>('#settings')!;
 const status = document.querySelector<HTMLSpanElement>('#status')!;
-const field = <T>(name: string) => form.elements.namedItem(name) as unknown as T;
+const control = <T>(name: string) => form.elements.namedItem(name) as unknown as T;
 
-const llmApiKey = field<HTMLInputElement>('llmApiKey');
-const languageToolUrl = field<HTMLInputElement>('languageToolUrl');
-const excludedSites = field<HTMLTextAreaElement>('excludedSites');
-const disabledSites = field<HTMLTextAreaElement>('disabledSites');
-const englishVariant = field<RadioNodeList>('englishVariant');
+const llmApiKey = control<HTMLInputElement>('llmApiKey');
+const languageToolUrl = control<HTMLInputElement>('languageToolUrl');
+const excludedSites = control<HTMLTextAreaElement>('excludedSites');
+const disabledSites = control<HTMLTextAreaElement>('disabledSites');
+const englishVariant = control<RadioNodeList>('englishVariant');
 
 function fill(settings: Settings): void {
   llmApiKey.value = settings.llmApiKey;

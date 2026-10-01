@@ -1,6 +1,7 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { browser } from 'wxt/browser';
 import { FieldOverlay } from './field-overlay';
+import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
 import { RateLimitedError, type Engine } from '../../lib/engine';
 import type { CheckFieldMessage, CheckFieldResponse } from '../../lib/messages';
@@ -25,6 +26,7 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   main() {
     const fields = new Map<HTMLTextAreaElement, FieldState>();
+    const hover = new HoverController();
 
     function attach(field: HTMLTextAreaElement): void {
       if (fields.has(field)) return;
@@ -34,6 +36,7 @@ export default defineContentScript({
         onChange: (errors) => overlay.render(field.value, errors),
       });
       fields.set(field, { overlay, checker });
+      hover.watch(field, overlay);
       field.addEventListener('input', () => {
         // Render shifted/trimmed underlines on every keystroke; the debounced
         // re-check then fills in anything new.

@@ -46,6 +46,21 @@ describe('LanguageTool requests follow Settings', () => {
     );
   });
 
+  it.each([
+    'http://localhost:8081/v2',
+    'http://localhost:8081/v2/',
+    'http://localhost:8081/v2/check',
+    'http://localhost:8081/v2/check/',
+  ])('does not double the API path when the URL is %s', async (languageToolUrl) => {
+    expect((await checkWith({ languageToolUrl })).url).toBe('http://localhost:8081/v2/check');
+  });
+
+  it('keeps a path prefix before /v2', async () => {
+    expect((await checkWith({ languageToolUrl: 'https://host/lt/v2' })).url).toBe(
+      'https://host/lt/v2/check',
+    );
+  });
+
   it('falls back to the public API when the stored URL is not http(s)', async () => {
     expect((await checkWith({ languageToolUrl: 'not a url' })).url).toBe(
       'https://api.languagetool.org/v2/check',

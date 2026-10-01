@@ -74,13 +74,16 @@ function normalizeSites(value: unknown): string[] {
   return [...new Set(sites)];
 }
 
-/** An http(s) URL without its trailing slash, or `undefined` if it isn't one. */
+/**
+ * An http(s) URL without its trailing slash or a trailing `/v2` / `/v2/check`
+ * (the engine appends `/v2/check` itself), or `undefined` if it isn't one.
+ */
 export function normalizeUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   try {
     const url = new URL(value.trim());
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
-    return url.href.replace(/\/+$/, '');
+    return url.href.replace(/\/+$/, '').replace(/\/v2(\/check)?$/, '');
   } catch {
     return undefined;
   }

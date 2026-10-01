@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Type Right settings</title>
+    <meta name="manifest.open_in_tab" content="true" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1f2328;
+        --muted: #59636e;
+        --border: #d1d9e0;
+        --bg: #ffffff;
+        --accent: #0969da;
+        --bad: #d1242f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e6edf3;
+          --muted: #9198a1;
+          --border: #3d444d;
+          --bg: #0d1117;
+          --accent: #4493f8;
+          --bad: #f85149;
+        }
+      }
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+        max-width: 560px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      h1 {
+        font-size: 1.4rem;
+      }
+      fieldset {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin: 0 0 1rem;
+        padding: 0.75rem 1rem 1rem;
+      }
+      legend {
+        font-weight: 600;
+        padding: 0 0.25rem;
+      }
+      label {
+        display: block;
+        margin-top: 0.5rem;
+      }
+      input[type='text'],
+      input[type='password'],
+      input[type='url'],
+      textarea {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 0.25rem;
+        padding: 0.4rem 0.5rem;
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      textarea {
+        min-height: 5rem;
+        font-family: ui-monospace, monospace;
+        font-size: 0.9rem;
+      }
+      .radio {
+        display: inline-flex;
+        gap: 0.35rem;
+        margin-right: 1.25rem;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin: 0.25rem 0 0;
+      }
+      button {
+        font: inherit;
+        padding: 0.45rem 1.1rem;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #status {
+        margin-left: 0.75rem;
+        color: var(--bad);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Type Right settings</h1>
+    <form id="settings">
+      <fieldset>
+        <legend>English</legend>
+        <label class="radio"><input type="radio" name="englishVariant" value="en-US" /> US English</label>
+        <label class="radio"><input type="radio" name="englishVariant" value="en-GB" /> UK English</label>
+        <p class="hint">Decides spellings like color / colour.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Engines</legend>
+        <label>
+          LLM API key
+          <input type="password" name="llmApiKey" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="hint">Used for the deeper wording check. Currently GLM (Zhipu AI / Z.ai).</p>
+        <label>
+          LanguageTool server URL
+          <input type="url" name="languageToolUrl" required spellcheck="false" />
+        </label>
+        <p class="hint">Defaults to the free public API. Point it at a self-hosted server if you run one.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Sites</legend>
+        <label>
+          Never send to the LLM
+          <textarea name="excludedSites" spellcheck="false" placeholder="work.example.com"></textarea>
+        </label>
+        <p class="hint">One site per line. Text on these sites is only checked by LanguageTool. Subdomains are included.</p>
+        <label>
+          Turn Type Right off
+          <textarea name="disabledSites" spellcheck="false" placeholder="docs.google.com"></textarea>
+        </label>
+        <p class="hint">One site per line. No checking and no underlines at all on these sites.</p>
+      </fieldset>
+
+      <button type="submit" disabled>Save</button><span id="status" role="status"></span>
+    </form>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

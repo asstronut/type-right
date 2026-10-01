@@ -1,12 +1,21 @@
 import type { CheckError } from './errors';
 import { RateLimitedError, type Engine } from './engine';
+import { isSiteDisabled, type Settings } from './settings';
 
 export interface CheckEngines {
   languageTool: Engine;
 }
 
+export interface CheckSite {
+  hostname: string;
+  /** The current Settings, read at check time so changes apply without a reload. */
+  settings(): Settings;
+}
+
 export interface FieldCheckerOptions {
   engines: CheckEngines;
+  /** The site the field is on; without it every check runs. */
+  site?: CheckSite;
   /** Called with the field's current Errors whenever a check changes them. */
   onChange(errors: CheckError[]): void;
   debounceMs?: number;
@@ -68,6 +77,10 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   async function fire(): Promise<void> {
     timer = undefined;
     if (disposed) return;
+    if (options.site && isSiteDisabled(options.site.hostname, options.site.settings())) {
+      dirty = null;
+      return;
+    }
     const waitMs = blockedUntil - Date.now();
     if (waitMs > 0) return schedule(waitMs);
     if (running) return schedule(debounceMs);

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFieldChecker } from './checker';
 import { createLanguageToolEngine } from './engines/language-tool';
 import type { CheckError } from './errors';
+import { DEFAULT_SETTINGS, type Settings } from './settings';
 
 const DEBOUNCE_MS = 600;
 
@@ -34,13 +35,17 @@ describe('createFieldChecker', () => {
   const fetchMock = vi.fn();
   let latest: CheckError[];
 
-  function setup() {
+  function setup(site?: { hostname: string; settings: Partial<Settings> }) {
     const languageTool = createLanguageToolEngine({
       apiUrl: 'https://api.languagetool.org',
       language: 'en-US',
     });
     const checker = createFieldChecker({
       engines: { languageTool },
+      site: site && {
+        hostname: site.hostname,
+        settings: () => ({ ...DEFAULT_SETTINGS, ...site.settings }),
+      },
       onChange: (errors) => {
         latest = errors;
       },
@@ -313,6 +318,25 @@ describe('createFieldChecker', () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(latest).toHaveLength(1);
+    });
+  });
+
+  describe('site settings', () => {
+    it('makes no engine calls on a disabled site', async () => {
+      const field = setup({ hostname: 'mail.example.com', settings: { disabledSites: ['example.com'] } });
+
+      await field.type('I will recieve it');
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(latest).toEqual([]);
+    });
+
+    it('still checks on a site that is not disabled', async () => {
+      const field = setup({ hostname: 'github.com', settings: { disabledSites: ['example.com'] } });
+
+      await field.type('I will recieve it');
+
+      expect(sentTexts()).toEqual(['I will recieve it']);
     });
   });
 });

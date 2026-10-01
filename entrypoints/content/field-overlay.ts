@@ -53,6 +53,7 @@ export class FieldOverlay {
   private readonly field: HTMLTextAreaElement;
   private readonly el: HTMLDivElement;
   private spans: { span: HTMLSpanElement; error: CheckError }[] = [];
+  private readonly listeners = new AbortController();
 
   constructor(field: HTMLTextAreaElement) {
     this.field = field;
@@ -69,7 +70,7 @@ export class FieldOverlay {
     });
     document.documentElement.appendChild(this.el);
 
-    field.addEventListener('scroll', () => this.syncScroll());
+    field.addEventListener('scroll', () => this.syncScroll(), { signal: this.listeners.signal });
   }
 
   render(text: string, errors: CheckError[]): void {
@@ -108,6 +109,7 @@ export class FieldOverlay {
   }
 
   destroy(): void {
+    this.listeners.abort();
     this.el.remove();
   }
 

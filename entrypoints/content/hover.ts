@@ -33,14 +33,16 @@ export class HoverController {
     window.addEventListener('resize', () => this.close());
   }
 
-  watch(field: HTMLTextAreaElement, overlay: FieldOverlay): void {
-    field.addEventListener('mousemove', (event) => this.onHover(field, overlay.errorAt(event.clientX, event.clientY)));
-    field.addEventListener('mouseleave', () => this.onHover(field, undefined));
+  /** Hovers `field`'s underlines until `signal` aborts. */
+  watch(field: HTMLTextAreaElement, overlay: FieldOverlay, signal: AbortSignal): void {
+    const listen = { signal };
+    field.addEventListener('mousemove', (event) => this.onHover(field, overlay.errorAt(event.clientX, event.clientY)), listen);
+    field.addEventListener('mouseleave', () => this.onHover(field, undefined), listen);
     // Typing (not shortcuts like Ctrl+C or bare modifiers) closes the card.
-    field.addEventListener('input', () => this.close());
+    field.addEventListener('input', () => this.close(), listen);
     field.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') this.close();
-    });
+    }, listen);
   }
 
   private onHover(field: HTMLTextAreaElement, hit: ErrorHit | undefined): void {
@@ -84,7 +86,7 @@ export class HoverController {
     );
   }
 
-  private close(): void {
+  close(): void {
     this.cancelPending();
     this.cancelClose();
     this.card.hide();

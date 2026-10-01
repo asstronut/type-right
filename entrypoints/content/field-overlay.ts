@@ -28,6 +28,21 @@ const MIRROR_PROPERTIES = [
   'tab-size',
 ] as const;
 
+export const KIND_COLORS: Record<CheckError['kind'], string> = {
+  spelling: '#e11d48',
+  grammar: '#2563eb',
+  wording: '#7c3aed',
+};
+
+/** The underline is drawn just below the glyphs; count it as part of the hover target. */
+const UNDERLINE_HIT_SLOP_PX = 4;
+
+export interface ErrorHit {
+  error: CheckError;
+  /** The box of the underlined line under the pointer, for placing the Hover card. */
+  rect: DOMRect;
+}
+
 /**
  * Mirrors a textarea's box and typography in a same-sized, invisible-text
  * overlay so underline spans land exactly under the right characters.
@@ -37,6 +52,7 @@ const MIRROR_PROPERTIES = [
 export class FieldOverlay {
   private readonly field: HTMLTextAreaElement;
   private readonly el: HTMLDivElement;
+  private spans: { span: HTMLSpanElement; error: CheckError }[] = [];
 
   constructor(field: HTMLTextAreaElement) {
     this.field = field;
@@ -68,8 +84,27 @@ export class FieldOverlay {
     this.syncScroll();
   }
 
+  /**
+   * The rendered Error under a viewport point, if any. The overlay ignores the
+   * pointer (so the textarea keeps working), which is why hovering is done by
+   * hit-testing its spans rather than by listening on them.
+   */
+  errorAt(x: number, y: number): ErrorHit | undefined {
+    const visible = this.el.getBoundingClientRect();
+    if (x < visible.left || x > visible.right || y < visible.top || y > visible.bottom) return undefined;
+    for (const { span, error } of this.spans) {
+      for (const rect of span.getClientRects()) {
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom + UNDERLINE_HIT_SLOP_PX) {
+          return { error, rect };
+        }
+      }
+    }
+    return undefined;
+  }
+
   clear(): void {
     this.el.replaceChildren();
+    this.spans = [];
   }
 
   destroy(): void {
@@ -99,6 +134,7 @@ export class FieldOverlay {
 
   private renderSpans(text: string, errors: CheckError[]): void {
     this.el.replaceChildren();
+    this.spans = [];
     const sorted = [...errors].sort((a, b) => a.start - b.start);
 
     let cursor = 0;
@@ -111,26 +147,16 @@ export class FieldOverlay {
       span.textContent = text.slice(error.start, error.end);
       span.style.textDecorationLine = 'underline';
       span.style.textDecorationStyle = 'solid';
-      span.style.textDecorationColor = colorForKind(error.kind);
+      span.style.textDecorationColor = KIND_COLORS[error.kind];
       span.style.textDecorationThickness = '3px';
       // Default "auto" breaks the line around descenders (y, g, p...), which looks like a cut-off underline.
       span.style.textDecorationSkipInk = 'none';
       this.el.appendChild(span);
+      this.spans.push({ span, error });
       cursor = error.end;
     }
     // A trailing newline adds an empty line in a textarea but not in a div; the
     // zero-width char keeps both the same scroll height.
     this.el.appendChild(document.createTextNode(`${text.slice(cursor)}​`));
-  }
-}
-
-function colorForKind(kind: CheckError['kind']): string {
-  switch (kind) {
-    case 'spelling':
-      return '#e11d48';
-    case 'grammar':
-      return '#2563eb';
-    case 'wording':
-      return '#7c3aed';
   }
 }

@@ -13,7 +13,6 @@
         --border: #d1d9e0;
         --bg: #ffffff;
         --accent: #0969da;
-        --ok: #1a7f37;
         --bad: #d1242f;
       }
       @media (prefers-color-scheme: dark) {
@@ -23,7 +22,6 @@
           --border: #3d444d;
           --bg: #0d1117;
           --accent: #4493f8;
-          --ok: #3fb950;
           --bad: #f85149;
         }
       }
@@ -91,13 +89,12 @@
         color: #fff;
         cursor: pointer;
       }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
       #status {
         margin-left: 0.75rem;
-      }
-      #status.ok {
-        color: var(--ok);
-      }
-      #status.error {
         color: var(--bad);
       }
     </style>
@@ -140,7 +137,7 @@
         <p class="hint">One site per line. No checking and no underlines at all on these sites.</p>
       </fieldset>
 
-      <button type="submit">Save</button><span id="status" role="status"></span>
+      <button type="submit" disabled>Save</button><span id="status" role="status"></span>
     </form>
     <script type="module" src="./main.ts"></script>
   </body>

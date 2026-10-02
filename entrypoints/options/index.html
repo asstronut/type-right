@@ -70,7 +70,8 @@
         font-family: ui-monospace, monospace;
         font-size: 0.9rem;
       }
-      .radio {
+      .radio,
+      .checkbox {
         display: inline-flex;
         gap: 0.35rem;
         margin-right: 1.25rem;
@@ -116,7 +117,7 @@
           <input type="password" name="llmApiKey" autocomplete="off" spellcheck="false" />
         </label>
         <p class="hint">Used for the deeper wording check. Currently GLM (Zhipu AI / Z.ai).</p>
-        <label class="radio"><input type="checkbox" name="llmConsent" /> Allow sending finished sentences to the LLM</label>
+        <label class="checkbox"><input type="checkbox" name="llmConsent" /> Allow sending finished sentences to the LLM</label>
         <p class="hint">Text goes to Z.ai, a provider in China. Without this, only LanguageTool checks your text.</p>
         <label>
           LanguageTool server URL

@@ -36,6 +36,7 @@ export interface FieldChecker {
 
 const DEFAULT_DEBOUNCE_MS = 600;
 const DEFAULT_LLM_DEBOUNCE_MS = 1500;
+const MAX_CACHED_SENTENCES = 500;
 const DEFAULT_RETRY_MS = 30_000;
 const MIN_RETRY_MS = 1_000;
 /** LanguageTool's free tier rejects requests over 20k characters. */
@@ -62,6 +63,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let disposed = false;
   let llmTimer: ReturnType<typeof setTimeout> | undefined;
   let llmRunning = false;
+  let llmBlockedUntil = 0;
   /** LLM results by sentence text, so an unchanged sentence is never sent twice. */
   const llmCache = new Map<string, CheckError[]>();
 
@@ -162,7 +164,16 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     llmTimer = undefined;
     const llm = options.engines.llm;
     if (disposed || !llm) return;
-    if (options.site && !isLlmAllowed(options.site.hostname, options.site.settings())) return;
+    if (options.site && !isLlmAllowed(options.site.hostname, options.site.settings())) {
+      // Consent withdrawn or the site excluded since the last check: drop what the LLM found.
+      if (llmErrors.length) {
+        llmErrors = [];
+        options.onChange(errors());
+      }
+      return;
+    }
+    const waitMs = llmBlockedUntil - Date.now();
+    if (waitMs > 0) return scheduleLlm(waitMs);
     if (llmRunning) return scheduleLlm(llmDebounceMs);
 
     llmRunning = true;
@@ -182,11 +193,15 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       if (!found) {
         try {
           found = await llm.check(sentenceText);
-        } catch {
-          // Left for the next edit to retry.
+        } catch (error) {
+          if (error instanceof RateLimitedError) {
+            llmBlockedUntil = Date.now() + Math.max(error.retryAfterMs ?? DEFAULT_RETRY_MS, MIN_RETRY_MS);
+            scheduleLlm(0);
+          }
+          // Any other failure is left for the next edit to retry.
           return;
         }
-        llmCache.set(sentenceText, found);
+        cacheLlmResult(sentenceText, found);
         // The text moved on; the newer edit has its own check queued, which will hit the cache.
         if (version !== startVersion || disposed) return;
       }
@@ -197,6 +212,12 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       ];
       options.onChange(errors());
     }
+  }
+
+  /** Keeps the cache bounded on long-lived fields by forgetting the oldest sentence first. */
+  function cacheLlmResult(sentenceText: string, found: CheckError[]): void {
+    llmCache.set(sentenceText, found);
+    if (llmCache.size > MAX_CACHED_SENTENCES) llmCache.delete(llmCache.keys().next().value!);
   }
 
   function dispose(): void {

@@ -4,23 +4,27 @@ import { FieldOverlay } from './field-overlay';
 import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
 import { RateLimitedError, type Engine } from '../../lib/engine';
-import type { CheckFieldMessage, CheckFieldResponse, CheckSentenceMessage } from '../../lib/messages';
+import type { CheckMessage, CheckResponse } from '../../lib/messages';
 import { isSiteDisabled } from '../../lib/settings';
 import { store } from '../../lib/store';
 
 /** Runs an engine in the background worker, via message, as a plain Engine. */
-function backgroundEngine(type: (CheckFieldMessage | CheckSentenceMessage)['type']): Engine {
+function backgroundEngine(type: CheckMessage['type'], name: string): Engine {
   return {
     async check(text) {
-      const response = (await browser.runtime.sendMessage({ type, text })) as CheckFieldResponse | undefined;
+      const message: CheckMessage = { type, text };
+      const response = (await browser.runtime.sendMessage(message)) as CheckResponse | undefined;
       if (response?.ok) return response.errors;
       if (response && response.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
-      throw new Error(`${type} failed`);
+      throw new Error(`${name} check failed`);
     },
   };
 }
 
-const engines = { languageTool: backgroundEngine('check-field'), llm: backgroundEngine('check-sentence') };
+const engines = {
+  languageTool: backgroundEngine('check-field', 'LanguageTool'),
+  llm: backgroundEngine('check-sentence', 'LLM'),
+};
 
 interface FieldState {
   overlay: FieldOverlay;

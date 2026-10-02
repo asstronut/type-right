@@ -481,6 +481,21 @@ describe('createFieldChecker', () => {
         expect(sentTexts()).toEqual(['I will recieve it.']);
       });
 
+      it('clears LLM Errors once the LLM is no longer allowed', async () => {
+        const settings: Partial<Settings> = { ...allowed };
+        const field = setup({ hostname: 'github.com', settings }, true);
+        llmReplies['I am agree with you.'] = llmReply([
+          { quote: 'am agree', kind: 'grammar', type: 'Verb form', explanation: 'No "am".', correction: 'agree' },
+        ]);
+        await field.typeAndWait('I am agree with you.');
+        expect(latest).toHaveLength(1);
+
+        settings.llmConsent = false;
+        await field.typeAndWait('I am agree with you. Bye.');
+
+        expect(latest).toEqual([]);
+      });
+
       it('makes no LLM call on a disabled site', async () => {
         const field = setup(
           { hostname: 'example.com', settings: { ...allowed, disabledSites: ['example.com'] } },

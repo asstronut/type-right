@@ -8,6 +8,7 @@ const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
 const control = <T>(name: string) => form.elements.namedItem(name) as unknown as T;
 
 const llmApiKey = control<HTMLInputElement>('llmApiKey');
+const llmConsent = control<HTMLInputElement>('llmConsent');
 const languageToolUrl = control<HTMLInputElement>('languageToolUrl');
 const excludedSites = control<HTMLTextAreaElement>('excludedSites');
 const disabledSites = control<HTMLTextAreaElement>('disabledSites');
@@ -18,6 +19,7 @@ let saved = '';
 
 function fill(settings: Settings): void {
   llmApiKey.value = settings.llmApiKey;
+  llmConsent.checked = settings.llmConsent;
   languageToolUrl.value = settings.languageToolUrl;
   excludedSites.value = settings.excludedSites.join('\n');
   disabledSites.value = settings.disabledSites.join('\n');
@@ -31,6 +33,7 @@ function fill(settings: Settings): void {
 function snapshot(): string {
   return JSON.stringify([
     llmApiKey.value,
+    llmConsent.checked,
     languageToolUrl.value,
     excludedSites.value,
     disabledSites.value,
@@ -74,6 +77,7 @@ form.addEventListener('submit', async (event) => {
     if (!url) throw new Error('The LanguageTool URL must start with http:// or https://.');
     const changes: Partial<Settings> = {
       llmApiKey: llmApiKey.value,
+      llmConsent: llmConsent.checked,
       englishVariant: englishVariant.value as EnglishVariant,
       languageToolUrl: url,
       excludedSites: parseSites(excludedSites, 'Never send to the LLM'),

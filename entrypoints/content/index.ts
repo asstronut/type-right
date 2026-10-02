@@ -4,20 +4,23 @@ import { FieldOverlay } from './field-overlay';
 import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
 import { RateLimitedError, type Engine } from '../../lib/engine';
-import type { CheckFieldMessage, CheckFieldResponse } from '../../lib/messages';
+import type { CheckFieldMessage, CheckFieldResponse, CheckSentenceMessage } from '../../lib/messages';
 import { isSiteDisabled } from '../../lib/settings';
 import { store } from '../../lib/store';
 
-/** Runs LanguageTool in the background worker, via message, as a plain Engine. */
-const languageTool: Engine = {
-  async check(text) {
-    const message: CheckFieldMessage = { type: 'check-field', text };
-    const response = (await browser.runtime.sendMessage(message)) as CheckFieldResponse | undefined;
-    if (response?.ok) return response.errors;
-    if (response && response.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
-    throw new Error('LanguageTool check failed');
-  },
-};
+/** Runs an engine in the background worker, via message, as a plain Engine. */
+function backgroundEngine(type: (CheckFieldMessage | CheckSentenceMessage)['type']): Engine {
+  return {
+    async check(text) {
+      const response = (await browser.runtime.sendMessage({ type, text })) as CheckFieldResponse | undefined;
+      if (response?.ok) return response.errors;
+      if (response && response.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
+      throw new Error(`${type} failed`);
+    },
+  };
+}
+
+const engines = { languageTool: backgroundEngine('check-field'), llm: backgroundEngine('check-sentence') };
 
 interface FieldState {
   overlay: FieldOverlay;
@@ -45,7 +48,7 @@ export default defineContentScript({
         if (fields.has(field)) return;
         const overlay = new FieldOverlay(field);
         const checker = createFieldChecker({
-          engines: { languageTool },
+          engines,
           site,
           onChange: (errors) => overlay.render(field.value, errors),
         });

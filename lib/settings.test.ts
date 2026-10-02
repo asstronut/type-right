@@ -98,3 +98,11 @@ describe('site lists', () => {
     expect(settings.excludedSites).toEqual(['github.com']);
   });
 });
+
+describe('LLM consent', () => {
+  it('is not given until stored as exactly true', () => {
+    expect(normalizeSettings(undefined).llmConsent).toBe(false);
+    expect(normalizeSettings({ llmConsent: 'yes' as unknown as boolean }).llmConsent).toBe(false);
+    expect(normalizeSettings({ llmConsent: true }).llmConsent).toBe(true);
+  });
+});

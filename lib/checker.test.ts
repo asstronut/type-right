@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFieldChecker } from './checker';
-import { createGlmEngine, GLM_API_URL } from './engines/glm';
 import { createLanguageToolEngine } from './engines/language-tool';
+import { createLlmEngine } from './engines/llm';
 import type { CheckError } from './errors';
+import type { LlmProviderId } from './llm-providers';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 
 const DEBOUNCE_MS = 600;
@@ -41,10 +42,51 @@ interface LlmMistake {
   correction: string;
 }
 
-/** Canned GLM replies, by the exact sentence sent; any other sentence gets no errors. */
+/** How each LLM provider looks from outside the browser. */
+const PROVIDERS = [
+  {
+    id: 'glm',
+    url: 'https://api.z.ai/api/paas/v4/chat/completions',
+    models: ['glm-4.7-flash', 'glm-4.5-flash'],
+    /** Z.ai's reply when a model is overloaded: HTTP 429 with business code 1305. */
+    overloaded: () =>
+      new Response(JSON.stringify({ error: { code: '1305', message: 'The service may be temporarily overloaded' } }), {
+        status: 429,
+      }),
+    rateLimited: () =>
+      new Response(JSON.stringify({ error: { code: '1302', message: 'Rate limit reached' } }), { status: 429 }),
+  },
+  {
+    id: 'gemini',
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    models: ['gemini-3.8-flash', 'gemini-3.5-flash-lite'],
+    overloaded: () =>
+      new Response(
+        JSON.stringify([{ error: { code: 503, message: 'The model is overloaded.', status: 'UNAVAILABLE' } }]),
+        { status: 503 },
+      ),
+    rateLimited: () =>
+      new Response(
+        JSON.stringify([{ error: { code: 429, message: 'Quota exceeded.', status: 'RESOURCE_EXHAUSTED' } }]),
+        { status: 429 },
+      ),
+  },
+] as const satisfies readonly {
+  id: LlmProviderId;
+  url: string;
+  models: readonly string[];
+  overloaded(): Response;
+  rateLimited(): Response;
+}[];
+
+const LLM_URLS: string[] = PROVIDERS.map((p) => p.url);
+
+/** The provider the field's LLM engine talks to. */
+let llmProvider: LlmProviderId;
+/** Canned LLM replies, by the exact sentence sent; any other sentence gets no errors. */
 let llmReplies: Record<string, string>;
-/** Raw GLM responses to return, in order, before falling back to `llmReplies`. */
-let glmResponses: (() => Response)[];
+/** Raw LLM responses to return, in order, before falling back to `llmReplies`. */
+let llmResponses: (() => Response)[];
 
 function llmReply(errors: LlmMistake[]): string {
   return JSON.stringify({ errors });
@@ -57,7 +99,7 @@ function chatCompletion(content: string): Response {
   );
 }
 
-/** The sentence a GLM request asks about: the last user message. */
+/** The sentence an LLM request asks about: the last user message. */
 function llmSentence(init: { body: string }): string {
   const body = JSON.parse(init.body) as { messages: { role: string; content: string }[] };
   return body.messages.filter((m) => m.role === 'user').at(-1)!.content;
@@ -72,12 +114,12 @@ describe('createFieldChecker', () => {
       apiUrl: 'https://api.languagetool.org',
       language: 'en-US',
     });
-    const llm = withLlm ? createGlmEngine({ apiKey: 'test-key' }) : undefined;
+    const llm = withLlm ? createLlmEngine(llmProvider, 'test-key') : undefined;
     const checker = createFieldChecker({
       engines: { languageTool, llm },
       site: site && {
         hostname: site.hostname,
-        settings: () => ({ ...DEFAULT_SETTINGS, ...site.settings }),
+        settings: () => ({ ...DEFAULT_SETTINGS, llmProvider, ...site.settings }),
       },
       onChange: (errors) => {
         latest = errors;
@@ -103,24 +145,35 @@ describe('createFieldChecker', () => {
   /** The texts LanguageTool was asked to check, in order. */
   function sentTexts(): string[] {
     return fetchMock.mock.calls
-      .filter(([url]) => url !== GLM_API_URL)
+      .filter(([url]) => !LLM_URLS.includes(url))
       .map(([, init]) => new URLSearchParams(init.body).get('text')!);
   }
 
-  /** The sentences GLM was asked to check, in order. */
+  /** The LLM requests made, in order. */
+  function llmCalls(): [string, { headers: Record<string, string>; body: string }][] {
+    return fetchMock.mock.calls.filter(([url]) => LLM_URLS.includes(url)) as ReturnType<typeof llmCalls>;
+  }
+
+  /** The sentences the LLM was asked to check, in order. */
   function llmSent(): string[] {
-    return fetchMock.mock.calls.filter(([url]) => url === GLM_API_URL).map(([, init]) => llmSentence(init));
+    return llmCalls().map(([, init]) => llmSentence(init));
+  }
+
+  /** The models the LLM requests asked for, in order. */
+  function models(): string[] {
+    return llmCalls().map(([, init]) => (JSON.parse(init.body) as { model: string }).model);
   }
 
   beforeEach(() => {
     vi.useFakeTimers();
     latest = [];
     llmReplies = {};
-    glmResponses = [];
+    llmResponses = [];
+    llmProvider = 'glm';
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockImplementation(async (url: string, init: { body: string }) => {
-      if (url === GLM_API_URL) {
-        const queued = glmResponses.shift();
+      if (LLM_URLS.includes(url)) {
+        const queued = llmResponses.shift();
         if (queued) return queued();
         return chatCompletion(llmReplies[llmSentence(init)] ?? llmReply([]));
       }
@@ -393,7 +446,11 @@ describe('createFieldChecker', () => {
     });
   });
 
-  describe('LLM check', () => {
+  describe.each(PROVIDERS)('LLM check ($id)', (provider) => {
+    beforeEach(() => {
+      llmProvider = provider.id;
+    });
+
     it('does not send an incomplete sentence', async () => {
       const field = setup(undefined, true);
 
@@ -446,44 +503,117 @@ describe('createFieldChecker', () => {
       expect(latest.map((e) => e.source)).toEqual(['languagetool', 'llm']);
     });
 
-    describe('when GLM is overloaded', () => {
-      /** Z.ai's reply when a model is overloaded: HTTP 429 with business code 1305. */
-      function overloaded(): Response {
-        return new Response(
-          JSON.stringify({ error: { code: '1305', message: 'The service may be temporarily overloaded' } }),
-          { status: 429 },
-        );
-      }
+    it('sends the sentence to the provider with the key as a bearer token and the primary model', async () => {
+      const field = setup(undefined, true);
 
-      function models(): string[] {
-        return fetchMock.mock.calls
-          .filter(([url]) => url === GLM_API_URL)
-          .map(([, init]) => (JSON.parse(init.body) as { model: string }).model);
-      }
+      await field.typeAndWait('I am agree with you.');
 
+      const [url, init] = llmCalls()[0]!;
+      expect(url).toBe(provider.url);
+      expect(init.headers.Authorization).toBe('Bearer test-key');
+      expect(models()).toEqual([provider.models[0]]);
+    });
+
+    it.runIf(provider.id === 'gemini')('does not send the Z.ai-only thinking field', async () => {
+      const field = setup(undefined, true);
+
+      await field.typeAndWait('I am agree with you.');
+
+      const [, init] = llmCalls()[0]!;
+      expect(JSON.parse(init.body)).not.toHaveProperty('thinking');
+    });
+
+    it('accepts a reply wrapped in a markdown code fence', async () => {
+      const field = setup(undefined, true);
+      const sentence = 'I am agree with you.';
+      const agree = { quote: 'am agree', kind: 'grammar', type: 'Verb form', explanation: 'No "am".', correction: 'agree' };
+      llmReplies[sentence] = '```json\n' + llmReply([agree]) + '\n```';
+
+      await field.typeAndWait(sentence);
+
+      expect(latest.map((e) => [e.start, e.end, e.source])).toEqual([[2, 10, 'llm']]);
+    });
+
+    it('drops malformed entries but keeps the well-formed ones', async () => {
+      const field = setup(undefined, true);
+      const sentence = 'I am agree with you.';
+      llmReplies[sentence] = JSON.stringify({
+        errors: [
+          { quote: 'am agree', kind: 'opinion', type: 'X', explanation: 'X', correction: 'agree' },
+          { quote: '', kind: 'grammar', type: 'X', explanation: 'X', correction: 'X' },
+          { quote: 'you', kind: 'grammar' },
+          'am agree',
+          { quote: 'am agree', kind: 'grammar', type: 'Verb form', explanation: 'No "am".', correction: 'agree' },
+        ],
+      });
+
+      await field.typeAndWait(sentence);
+
+      expect(latest.map((e) => [e.start, e.type])).toEqual([[2, 'Verb form']]);
+    });
+
+    it('shows no Errors for a sentence with no mistakes', async () => {
+      const field = setup(undefined, true);
+      llmReplies['I agree with you.'] = llmReply([]);
+
+      await field.typeAndWait('I agree with you.');
+
+      expect(llmSent()).toEqual(['I agree with you.']);
+      expect(latest).toEqual([]);
+    });
+
+    describe('when the model is overloaded', () => {
       it('asks the fallback model instead and shows its Errors', async () => {
         const field = setup(undefined, true);
         const sentence = 'I am agree with you.';
         llmReplies[sentence] = llmReply([
           { quote: 'am agree', kind: 'grammar', type: 'Verb form', explanation: 'No "am".', correction: 'agree' },
         ]);
-        glmResponses.push(overloaded);
+        llmResponses.push(provider.overloaded);
 
         await field.typeAndWait(sentence);
 
-        expect(models()).toEqual(['glm-4.7-flash', 'glm-4.5-flash']);
+        expect(models()).toEqual(provider.models);
         expect(latest.map((e) => e.source)).toEqual(['llm']);
       });
 
-      it('does not fall back on an ordinary rate limit', async () => {
+      it('gives up quietly when the fallback model is overloaded too', async () => {
         const field = setup(undefined, true);
-        glmResponses.push(
-          () => new Response(JSON.stringify({ error: { code: '1302', message: 'Rate limit reached' } }), { status: 429 }),
-        );
+        llmResponses.push(provider.overloaded, provider.overloaded);
 
         await field.typeAndWait('I am agree with you.');
 
-        expect(models()).toEqual(['glm-4.7-flash']);
+        expect(models()).toEqual(provider.models);
+        expect(latest).toEqual([]);
+      });
+    });
+
+    describe('when the key is rate-limited', () => {
+      it('does not fall back to the second model', async () => {
+        const field = setup(undefined, true);
+        llmResponses.push(provider.rateLimited);
+
+        await field.typeAndWait('I am agree with you.');
+
+        expect(models()).toEqual([provider.models[0]]);
+      });
+
+      it('backs off, then retries the sentence and shows the result', async () => {
+        const field = setup(undefined, true);
+        const sentence = 'I am agree with you.';
+        llmReplies[sentence] = llmReply([
+          { quote: 'am agree', kind: 'grammar', type: 'Verb form', explanation: 'No "am".', correction: 'agree' },
+        ]);
+        llmResponses.push(provider.rateLimited);
+        await field.typeAndWait(sentence);
+        expect(latest).toEqual([]);
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(llmSent()).toEqual([sentence]);
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(llmSent()).toEqual([sentence, sentence]);
+        expect(latest.map((e) => e.source)).toEqual(['llm']);
       });
     });
 
@@ -540,6 +670,17 @@ describe('createFieldChecker', () => {
         await field.typeAndWait('I am agree with you. Bye.');
 
         expect(latest).toEqual([]);
+      });
+
+      it('asks the new provider, rather than reusing the old one\'s answers, after a provider switch', async () => {
+        const settings: Partial<Settings> = { ...allowed };
+        const field = setup({ hostname: 'github.com', settings }, true);
+        await field.typeAndWait('I am agree with you.');
+
+        settings.llmProvider = provider.id === 'glm' ? 'gemini' : 'glm';
+        await field.typeAndWait('I am agree with you. Bye.');
+
+        expect(llmSent()).toEqual(['I am agree with you.', 'I am agree with you.', 'Bye.']);
       });
 
       it('makes no LLM call on a disabled site', async () => {

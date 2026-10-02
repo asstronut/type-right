@@ -53,6 +53,7 @@
       input[type='text'],
       input[type='password'],
       input[type='url'],
+      select,
       textarea {
         display: block;
         width: 100%;
@@ -113,12 +114,20 @@
       <fieldset>
         <legend>Engines</legend>
         <label>
+          LLM provider
+          <select name="llmProvider">
+            <option value="glm">GLM (Zhipu AI / Z.ai)</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </label>
+        <p class="hint">Changing it clears the key and asks for your consent again.</p>
+        <label>
           LLM API key
           <input type="password" name="llmApiKey" autocomplete="off" spellcheck="false" />
         </label>
-        <p class="hint">Used for the deeper wording check. Currently GLM (Zhipu AI / Z.ai).</p>
+        <p class="hint">Used for the deeper wording check. Paste <span id="keyName"></span>.</p>
         <label class="checkbox"><input type="checkbox" name="llmConsent" /> Allow sending finished sentences to the LLM</label>
-        <p class="hint">Text goes to Z.ai, a provider in China. Without this, only LanguageTool checks your text.</p>
+        <p class="hint">Text goes to <span id="recipient"></span>. Without this, only LanguageTool checks your text.</p>
         <label>
           LanguageTool server URL
           <input type="url" name="languageToolUrl" required spellcheck="false" />

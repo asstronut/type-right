@@ -70,16 +70,18 @@
         in Settings (the free public API by default).
       </li>
       <li>
-        <strong>GLM</strong> (Zhipu AI / Z.ai, a provider in China) checks for unnatural wording and grammar
-        LanguageTool misses. Each finished sentence you type is sent to Z.ai's API with your API key.
+        <strong class="llm-name">GLM</strong> (<span class="llm-recipient">Zhipu AI / Z.ai, a provider in China</span>)
+        checks for unnatural wording and grammar LanguageTool misses. Each finished sentence you type is sent to
+        <span class="llm-name">GLM</span>'s API with your API key.
       </li>
     </ul>
     <p>
-      Nothing is sent to GLM unless you accept below. You can list sites that must never be sent to GLM in
-      Settings, and withdraw consent there at any time.
+      Nothing is sent to <span class="llm-name">GLM</span> unless you accept below. Your consent covers only this
+      provider: choosing another one in Settings asks you again. You can list sites that must never be sent to the
+      LLM in Settings, and withdraw consent there at any time.
     </p>
     <div class="actions">
-      <button type="button" class="primary" id="accept">Accept: allow GLM checks</button>
+      <button type="button" class="primary" id="accept">Accept: allow <span class="llm-name">GLM</span> checks</button>
       <button type="button" id="decline">Decline: LanguageTool only</button>
     </div>
     <p id="status" role="status"></p>

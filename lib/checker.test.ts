@@ -43,6 +43,8 @@ interface LlmMistake {
 
 /** Canned GLM replies, by the exact sentence sent; any other sentence gets no errors. */
 let llmReplies: Record<string, string>;
+/** Raw GLM responses to return, in order, before falling back to `llmReplies`. */
+let glmResponses: (() => Response)[];
 
 function llmReply(errors: LlmMistake[]): string {
   return JSON.stringify({ errors });
@@ -114,9 +116,12 @@ describe('createFieldChecker', () => {
     vi.useFakeTimers();
     latest = [];
     llmReplies = {};
+    glmResponses = [];
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockImplementation(async (url: string, init: { body: string }) => {
       if (url === GLM_API_URL) {
+        const queued = glmResponses.shift();
+        if (queued) return queued();
         return chatCompletion(llmReplies[llmSentence(init)] ?? llmReply([]));
       }
       const text = new URLSearchParams(init.body).get('text')!;
@@ -439,6 +444,47 @@ describe('createFieldChecker', () => {
       await field.typeAndWait(sentence);
 
       expect(latest.map((e) => e.source)).toEqual(['languagetool', 'llm']);
+    });
+
+    describe('when GLM is overloaded', () => {
+      /** Z.ai's reply when a model is overloaded: HTTP 429 with business code 1305. */
+      function overloaded(): Response {
+        return new Response(
+          JSON.stringify({ error: { code: '1305', message: 'The service may be temporarily overloaded' } }),
+          { status: 429 },
+        );
+      }
+
+      function models(): string[] {
+        return fetchMock.mock.calls
+          .filter(([url]) => url === GLM_API_URL)
+          .map(([, init]) => (JSON.parse(init.body) as { model: string }).model);
+      }
+
+      it('asks the fallback model instead and shows its Errors', async () => {
+        const field = setup(undefined, true);
+        const sentence = 'I am agree with you.';
+        llmReplies[sentence] = llmReply([
+          { quote: 'am agree', kind: 'grammar', type: 'Verb form', explanation: 'No "am".', correction: 'agree' },
+        ]);
+        glmResponses.push(overloaded);
+
+        await field.typeAndWait(sentence);
+
+        expect(models()).toEqual(['glm-4.7-flash', 'glm-4.5-flash']);
+        expect(latest.map((e) => e.source)).toEqual(['llm']);
+      });
+
+      it('does not fall back on an ordinary rate limit', async () => {
+        const field = setup(undefined, true);
+        glmResponses.push(
+          () => new Response(JSON.stringify({ error: { code: '1302', message: 'Rate limit reached' } }), { status: 429 }),
+        );
+
+        await field.typeAndWait('I am agree with you.');
+
+        expect(models()).toEqual(['glm-4.7-flash']);
+      });
     });
 
     describe('privacy settings', () => {

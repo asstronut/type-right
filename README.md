@@ -65,7 +65,7 @@ Network calls run in the background service worker so API keys never reach page 
 - `entrypoints/consent/`: Consent page, opened on install; no LLM calls until the user accepts.
 - `lib/settings.ts`, `lib/store.ts`: `Settings` shape, defaults, site-list matching, and the typed Store over `chrome.storage.local`. Tested in [settings.test.ts](lib/settings.test.ts).
 - `lib/checker.ts`: per-field checker core: edit diffing, offset mapping, paragraph scoping, debounce, rate-limit retry, LLM sentence scheduling (complete sentences only, ~1.5 s pause, cached by sentence text) and merging of overlapping LanguageTool/LLM Errors. Tested in [checker.test.ts](lib/checker.test.ts).
-- `lib/engine.ts`, `lib/engines/language-tool.ts`, `lib/engines/glm.ts`: `Engine` interface, the LanguageTool adapter, and the GLM adapter (prompt, JSON reply parsing, locating quoted spans).
+- `lib/engine.ts`, `lib/engines/language-tool.ts`, `lib/engines/glm.ts`: `Engine` interface, the LanguageTool adapter, and the GLM adapter (prompt, JSON reply parsing, locating quoted spans, falling back to `glm-4.5-flash` when `glm-4.7-flash` is overloaded).
 - `lib/errors.ts`: `CheckError` shape and stable error ids (derived from kind + flagged text, not position, so re-flagging the same mistake yields the same id).
 
 ## Privacy

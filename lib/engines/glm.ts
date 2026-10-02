@@ -4,6 +4,10 @@ import { RateLimitedError, type Engine } from '../engine';
 /** Z.ai's OpenAI-compatible chat completions endpoint. */
 export const GLM_API_URL = 'https://api.z.ai/api/paas/v4/chat/completions';
 export const GLM_MODEL = 'glm-4.7-flash';
+/** Also free; asked instead when GLM_MODEL is overloaded. */
+export const GLM_FALLBACK_MODEL = 'glm-4.5-flash';
+/** Z.ai's business error code for "the service may be temporarily overloaded" (sent with HTTP 429). */
+const OVERLOADED_CODE = '1305';
 
 export interface GlmConfig {
   apiKey: string;
@@ -41,20 +45,10 @@ const KINDS: readonly unknown[] = ['spelling', 'grammar', 'wording'] satisfies E
 export function createGlmEngine(config: GlmConfig): Engine {
   return {
     async check(sentence: string): Promise<CheckError[]> {
-      const response = await fetch(GLM_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify({
-          model: GLM_MODEL,
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: sentence },
-          ],
-          temperature: 0.1,
-          thinking: { type: 'disabled' },
-          response_format: { type: 'json_object' },
-        }),
-      });
+      let response = await request(config, GLM_MODEL, sentence);
+      if (response.status === 429 && (await isOverloaded(response))) {
+        response = await request(config, GLM_FALLBACK_MODEL, sentence);
+      }
 
       if (response.status === 429) throw new RateLimitedError();
       if (!response.ok) throw new Error(`GLM request failed: ${response.status}`);
@@ -63,6 +57,33 @@ export function createGlmEngine(config: GlmConfig): Engine {
       return locateErrors(sentence, parseErrors(data.choices?.[0]?.message?.content));
     },
   };
+}
+
+function request(config: GlmConfig, model: string, sentence: string): Promise<Response> {
+  return fetch(GLM_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: sentence },
+      ],
+      temperature: 0.1,
+      thinking: { type: 'disabled' },
+      response_format: { type: 'json_object' },
+    }),
+  });
+}
+
+/** Whether a 429 means the model is overloaded, as opposed to this key being rate-limited. */
+async function isOverloaded(response: Response): Promise<boolean> {
+  try {
+    const body = (await response.clone().json()) as { error?: { code?: unknown } };
+    return String(body.error?.code) === OVERLOADED_CODE;
+  } catch {
+    return false;
+  }
 }
 
 /** The well-formed Errors in the model's reply; a reply that isn't valid JSON yields none. */

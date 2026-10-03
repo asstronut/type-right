@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFieldChecker } from './checker';
+import { createFieldChecker, type LlmHealth } from './checker';
 import { createLanguageToolEngine } from './engines/language-tool';
 import { createLlmEngine } from './engines/llm';
 import type { CheckError } from './errors';
@@ -85,8 +85,8 @@ const LLM_URLS: string[] = PROVIDERS.map((p) => p.url);
 let llmProvider: LlmProviderId;
 /** Canned LLM replies, by the exact sentence sent; any other sentence gets no errors. */
 let llmReplies: Record<string, string>;
-/** Raw LLM responses to return, in order, before falling back to `llmReplies`. */
-let llmResponses: (() => Response)[];
+/** Raw LLM responses to return (or throw), in order, before falling back to `llmReplies`. */
+let llmResponses: ((init: { signal?: AbortSignal }) => Response | Promise<Response>)[];
 
 function llmReply(errors: LlmMistake[]): string {
   return JSON.stringify({ errors });
@@ -108,6 +108,7 @@ function llmSentence(init: { body: string }): string {
 describe('createFieldChecker', () => {
   const fetchMock = vi.fn();
   let latest: CheckError[];
+  let health: LlmHealth | undefined;
 
   function setup(site?: { hostname: string; settings: Partial<Settings> }, withLlm = false) {
     const languageTool = createLanguageToolEngine({
@@ -124,6 +125,9 @@ describe('createFieldChecker', () => {
       onChange: (errors) => {
         latest = errors;
       },
+      onLlmHealthChange: (next) => {
+        health = next;
+      },
     });
     return {
       /** Type the new full text, then pause long enough for the debounced check to finish. */
@@ -139,6 +143,7 @@ describe('createFieldChecker', () => {
         return immediate;
       },
       update: checker.update,
+      llmHealth: checker.llmHealth,
     };
   }
 
@@ -167,14 +172,15 @@ describe('createFieldChecker', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     latest = [];
+    health = undefined;
     llmReplies = {};
     llmResponses = [];
     llmProvider = 'glm';
     vi.stubGlobal('fetch', fetchMock);
-    fetchMock.mockImplementation(async (url: string, init: { body: string }) => {
+    fetchMock.mockImplementation(async (url: string, init: { body: string; signal?: AbortSignal }) => {
       if (LLM_URLS.includes(url)) {
         const queued = llmResponses.shift();
-        if (queued) return queued();
+        if (queued) return queued(init);
         return chatCompletion(llmReplies[llmSentence(init)] ?? llmReply([]));
       }
       const text = new URLSearchParams(init.body).get('text')!;
@@ -585,6 +591,8 @@ describe('createFieldChecker', () => {
 
         expect(models()).toEqual(provider.models);
         expect(latest).toEqual([]);
+        // An overloaded provider is not the user's quota running out.
+        expect(health).toEqual({ state: 'failing', reason: 'bad-response' });
       });
     });
 
@@ -614,6 +622,125 @@ describe('createFieldChecker', () => {
         await vi.advanceTimersByTimeAsync(60_000);
         expect(llmSent()).toEqual([sentence, sentence]);
         expect(latest.map((e) => e.source)).toEqual(['llm']);
+      });
+    });
+
+    describe('LLM health', () => {
+      const allowed = { llmConsent: true, llmApiKey: 'test-key' };
+      const agreeReply = llmReply([
+        { quote: 'am agree', kind: 'grammar', type: 'Verb form', explanation: 'No "am".', correction: 'agree' },
+      ]);
+
+      it('is active when the LLM is allowed', () => {
+        const field = setup({ hostname: 'github.com', settings: allowed }, true);
+
+        expect(field.llmHealth()).toEqual({ state: 'active' });
+      });
+
+      it('is LT only without consent', () => {
+        const field = setup({ hostname: 'github.com', settings: { ...allowed, llmConsent: false } }, true);
+
+        expect(field.llmHealth()).toEqual({ state: 'lt-only', reason: 'no-consent' });
+      });
+
+      it('is LT only on an excluded site', () => {
+        const field = setup(
+          { hostname: 'mail.example.com', settings: { ...allowed, excludedSites: ['example.com'] } },
+          true,
+        );
+
+        expect(field.llmHealth()).toEqual({ state: 'lt-only', reason: 'excluded-site' });
+      });
+
+      it('is failing with no key when consent is given but no key is set', () => {
+        const field = setup({ hostname: 'github.com', settings: { ...allowed, llmApiKey: '' } }, true);
+
+        expect(field.llmHealth()).toEqual({ state: 'failing', reason: 'no-key' });
+      });
+
+      it.each([
+        ['no-key', 'the key is rejected (401)', () => new Response('{}', { status: 401 })],
+        ['no-key', 'the key is forbidden (403)', () => new Response('{}', { status: 403 })],
+        ['quota', 'the key is rate-limited (429)', provider.rateLimited],
+        ['bad-response', 'the server errors (500)', () => new Response('oops', { status: 500 })],
+        ['bad-response', 'the body is not a chat completion', () => new Response('<html>', { status: 200 })],
+        [
+          'network',
+          'the request cannot reach the server',
+          () => {
+            throw new TypeError('Failed to fetch');
+          },
+        ],
+      ] as const)('reports %s when %s', async (reason, _, response) => {
+        const field = setup({ hostname: 'github.com', settings: allowed }, true);
+        llmResponses.push(response);
+
+        await field.typeAndWait('I am agree with you.');
+
+        expect(health).toEqual({ state: 'failing', reason });
+        expect(field.llmHealth()).toEqual({ state: 'failing', reason });
+      });
+
+      it('reports timeout when the LLM takes longer than 8s', async () => {
+        const field = setup({ hostname: 'github.com', settings: allowed }, true);
+        llmResponses.push(
+          ({ signal }) =>
+            new Promise((_, reject) =>
+              signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))),
+            ),
+        );
+
+        await field.typeAndWait('I am agree with you.');
+        await vi.advanceTimersByTimeAsync(7_900);
+        expect(health).toBeUndefined();
+
+        await vi.advanceTimersByTimeAsync(200);
+        expect(health).toEqual({ state: 'failing', reason: 'timeout' });
+      });
+
+      it('makes no LLM call for 60s after a failure, then retries and becomes active again', async () => {
+        const field = setup({ hostname: 'github.com', settings: allowed }, true);
+        const sentence = 'I am agree with you.';
+        llmReplies[sentence] = agreeReply;
+        llmResponses.push(() => new Response('oops', { status: 500 }));
+        await field.typeAndWait(sentence);
+        expect(llmSent()).toEqual([sentence]);
+
+        await field.typeAndWait(`${sentence} Bye.`);
+        await vi.advanceTimersByTimeAsync(55_000);
+        expect(llmSent()).toEqual([sentence]);
+        expect(health).toEqual({ state: 'failing', reason: 'bad-response' });
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(llmSent()).toEqual([sentence, sentence, 'Bye.']);
+        expect(health).toEqual({ state: 'active' });
+        expect(latest.map((e) => e.source)).toEqual(['llm']);
+      });
+
+      it('still returns LanguageTool Errors while the LLM is failing', async () => {
+        const field = setup({ hostname: 'github.com', settings: allowed }, true);
+        llmResponses.push(() => new Response('oops', { status: 500 }));
+        await field.typeAndWait('I am agree with you.');
+        expect(health?.state).toBe('failing');
+
+        await field.typeAndWait('I am agree with you. I will recieve it.');
+
+        expect(latest.map((e) => e.source)).toEqual(['languagetool']);
+        expect(health?.state).toBe('failing');
+      });
+
+      it('forgets a failure, and retries at once, after the key changes', async () => {
+        const settings: Partial<Settings> = { ...allowed };
+        const field = setup({ hostname: 'github.com', settings }, true);
+        llmResponses.push(() => new Response('{}', { status: 401 }));
+        await field.typeAndWait('I am agree with you.');
+        expect(field.llmHealth()).toEqual({ state: 'failing', reason: 'no-key' });
+
+        settings.llmApiKey = 'new-key';
+        expect(field.llmHealth()).toEqual({ state: 'active' });
+        await field.typeAndWait('I am agree with you. Bye.');
+
+        expect(llmSent()).toEqual(['I am agree with you.', 'I am agree with you.', 'Bye.']);
       });
     });
 

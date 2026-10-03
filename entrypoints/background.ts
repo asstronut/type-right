@@ -1,6 +1,6 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { browser } from 'wxt/browser';
-import { RateLimitedError } from '../lib/engine';
+import { LlmFailedError, RateLimitedError } from '../lib/engine';
 import { createLlmEngine } from '../lib/engines/llm';
 import { createLanguageToolEngine } from '../lib/engines/language-tool';
 import type { CheckError } from '../lib/errors';
@@ -37,9 +37,12 @@ function respond(check: (settings: Settings) => Promise<CheckError[]>): Promise<
     .then(check)
     .then(
       (errors): CheckResponse => ({ ok: true, errors }),
-      (error): CheckResponse =>
-        error instanceof RateLimitedError
-          ? { ok: false, reason: 'rate-limited', retryAfterMs: error.retryAfterMs }
-          : { ok: false, reason: 'failed' },
+      (error): CheckResponse => {
+        if (error instanceof RateLimitedError) {
+          return { ok: false, reason: 'rate-limited', retryAfterMs: error.retryAfterMs };
+        }
+        if (error instanceof LlmFailedError) return { ok: false, reason: 'llm-failed', failure: error.failure };
+        return { ok: false, reason: 'failed' };
+      },
     );
 }

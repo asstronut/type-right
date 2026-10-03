@@ -1,5 +1,5 @@
 import { makeErrorId, type CheckError, type ErrorKind } from '../errors';
-import { RateLimitedError, type Engine } from '../engine';
+import { LlmFailedError, type Engine } from '../engine';
 import { LLM_PROVIDERS, type LlmProvider, type LlmProviderId } from '../llm-providers';
 
 const SYSTEM_PROMPT = `You check one English sentence written by a non-native speaker.
@@ -31,27 +31,64 @@ interface LlmError {
 
 const KINDS: readonly unknown[] = ['spelling', 'grammar', 'wording'] satisfies ErrorKind[];
 
-/** The LLM engine for `providerId`, sending each sentence with `apiKey`. */
+/** A check, fallback model included, is abandoned after this long. */
+const TIMEOUT_MS = 8_000;
+
+/**
+ * The LLM engine for `providerId`, sending each sentence with `apiKey`. Every
+ * failure is thrown as an LlmFailedError saying why.
+ */
 export function createLlmEngine(providerId: LlmProviderId, apiKey: string): Engine {
   const provider = LLM_PROVIDERS[providerId];
   return {
     async check(sentence: string): Promise<CheckError[]> {
-      let response = await request(provider, apiKey, provider.model, sentence);
-      if (await provider.isOverloaded(response)) {
-        response = await request(provider, apiKey, provider.fallbackModel, sentence);
+      const timeout = new AbortController();
+      const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS);
+      try {
+        return await checkWithin(provider, apiKey, sentence, timeout.signal);
+      } catch (error) {
+        if (error instanceof LlmFailedError) throw error;
+        if (timeout.signal.aborted) throw new LlmFailedError('timeout');
+        // fetch rejects with a TypeError when the server can't be reached.
+        throw new LlmFailedError(error instanceof TypeError ? 'network' : 'bad-response');
+      } finally {
+        clearTimeout(timer);
       }
-
-      if (response.status === 429) throw new RateLimitedError();
-      if (!response.ok) throw new Error(`${provider.name} request failed: ${response.status}`);
-
-      const data = (await response.json()) as ChatCompletion;
-      return locateErrors(sentence, parseErrors(data.choices?.[0]?.message?.content));
     },
   };
 }
 
-function request(provider: LlmProvider, apiKey: string, model: string, sentence: string): Promise<Response> {
+async function checkWithin(
+  provider: LlmProvider,
+  apiKey: string,
+  sentence: string,
+  signal: AbortSignal,
+): Promise<CheckError[]> {
+  let response = await request(provider, apiKey, provider.model, sentence, signal);
+  if (await provider.isOverloaded(response)) {
+    response = await request(provider, apiKey, provider.fallbackModel, sentence, signal);
+    // Overloaded too: the provider is struggling, which is not this key's quota.
+    if (await provider.isOverloaded(response)) throw new LlmFailedError('bad-response');
+  }
+
+  if (response.status === 401 || response.status === 403) throw new LlmFailedError('no-key');
+  if (response.status === 429) throw new LlmFailedError('quota');
+  if (!response.ok) throw new LlmFailedError('bad-response');
+
+  const choices = ((await response.json()) as ChatCompletion | null)?.choices;
+  if (!Array.isArray(choices)) throw new LlmFailedError('bad-response');
+  return locateErrors(sentence, parseErrors(choices[0]?.message?.content));
+}
+
+function request(
+  provider: LlmProvider,
+  apiKey: string,
+  model: string,
+  sentence: string,
+  signal: AbortSignal,
+): Promise<Response> {
   return fetch(provider.apiUrl, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({

@@ -1,9 +1,11 @@
 import type { CheckError } from './errors';
 import { RateLimitedError, type Engine } from './engine';
-import { isSiteDisabled, type Settings } from './settings';
+import { isLlmAllowed, isSiteDisabled, type Settings } from './settings';
 
 export interface CheckEngines {
   languageTool: Engine;
+  /** Checks one complete sentence at a time; without it only LanguageTool runs. */
+  llm?: Engine;
 }
 
 export interface CheckSite {
@@ -19,6 +21,7 @@ export interface FieldCheckerOptions {
   /** Called with the field's current Errors whenever a check changes them. */
   onChange(errors: CheckError[]): void;
   debounceMs?: number;
+  llmDebounceMs?: number;
 }
 
 export interface FieldChecker {
@@ -32,6 +35,8 @@ export interface FieldChecker {
 }
 
 const DEFAULT_DEBOUNCE_MS = 600;
+const DEFAULT_LLM_DEBOUNCE_MS = 1500;
+const MAX_CACHED_SENTENCES = 500;
 const DEFAULT_RETRY_MS = 30_000;
 const MIN_RETRY_MS = 1_000;
 /** LanguageTool's free tier rejects requests over 20k characters. */
@@ -44,9 +49,11 @@ interface Range {
 
 export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+  const llmDebounceMs = options.llmDebounceMs ?? DEFAULT_LLM_DEBOUNCE_MS;
 
   let text = '';
-  let errors: CheckError[] = [];
+  let ltErrors: CheckError[] = [];
+  let llmErrors: CheckError[] = [];
   /** Span of the text edited since it was last successfully checked. */
   let dirty: Range | null = null;
   let version = 0;
@@ -54,19 +61,37 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let running = false;
   let blockedUntil = 0;
   let disposed = false;
+  let llmTimer: ReturnType<typeof setTimeout> | undefined;
+  let llmRunning = false;
+  let llmBlockedUntil = 0;
+  /** LLM results by sentence text, so an unchanged sentence is never sent twice. */
+  const llmCache = new Map<string, CheckError[]>();
 
   function update(next: string): CheckError[] {
-    if (next === text) return errors;
+    if (next === text) return errors();
 
     const edit = diff(text, next);
-    errors = errors
-      .filter((error) => !touchesEdit(error, edit, text, next))
-      .map((error) => (error.start >= edit.oldEnd ? shift(error, edit.newEnd - edit.oldEnd) : error));
+    const follow = (list: CheckError[]) =>
+      list
+        .filter((error) => !touchesEdit(error, edit, text, next))
+        .map((error) => (error.start >= edit.oldEnd ? shift(error, edit.newEnd - edit.oldEnd) : error));
+    ltErrors = follow(ltErrors);
+    llmErrors = follow(llmErrors);
     dirty = unionRange(dirty && mapRange(dirty, edit), { start: edit.start, end: edit.newEnd });
     text = next;
     version++;
     schedule(debounceMs);
-    return errors;
+    if (options.engines.llm) scheduleLlm(llmDebounceMs);
+    return errors();
+  }
+
+  /**
+   * The field's Errors from both engines, in text order. Where both flag the
+   * same words only the LLM's Error is kept, for its clearer explanation.
+   */
+  function errors(): CheckError[] {
+    const unmatched = ltErrors.filter((lt) => !llmErrors.some((llm) => lt.start < llm.end && llm.start < lt.end));
+    return [...unmatched, ...llmErrors].sort((a, b) => a.start - b.start);
   }
 
   function schedule(delayMs: number): void {
@@ -120,19 +145,85 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         if (version !== startVersion || disposed) return;
       }
 
-      errors = [
-        ...errors.filter((e) => e.end < paragraph.start || e.start > paragraph.end),
+      ltErrors = [
+        ...ltErrors.filter((e) => e.end < paragraph.start || e.start > paragraph.end),
         ...found.map((e) => shift(e, paragraph.start)),
-      ].sort((a, b) => a.start - b.start);
+      ];
       dirty = dirty && dirty.end > paragraph.end ? { ...dirty, start: paragraph.end } : null;
-      options.onChange(errors);
+      options.onChange(errors());
     }
     dirty = null;
+  }
+
+  function scheduleLlm(delayMs: number): void {
+    if (llmTimer) clearTimeout(llmTimer);
+    llmTimer = setTimeout(() => void fireLlm(), delayMs);
+  }
+
+  async function fireLlm(): Promise<void> {
+    llmTimer = undefined;
+    const llm = options.engines.llm;
+    if (disposed || !llm) return;
+    if (options.site && !isLlmAllowed(options.site.hostname, options.site.settings())) {
+      // Consent withdrawn or the site excluded since the last check: drop what the LLM found.
+      if (llmErrors.length) {
+        llmErrors = [];
+        options.onChange(errors());
+      }
+      return;
+    }
+    const waitMs = llmBlockedUntil - Date.now();
+    if (waitMs > 0) return scheduleLlm(waitMs);
+    if (llmRunning) return scheduleLlm(llmDebounceMs);
+
+    llmRunning = true;
+    try {
+      await checkSentences(llm);
+    } finally {
+      llmRunning = false;
+    }
+  }
+
+  /** Puts each complete sentence's LLM Errors in place, asking the LLM only about uncached ones. */
+  async function checkSentences(llm: Engine): Promise<void> {
+    const startVersion = version;
+    for (const sentence of completeSentences(text)) {
+      const sentenceText = text.slice(sentence.start, sentence.end);
+      let found = llmCache.get(sentenceText);
+      if (!found) {
+        try {
+          found = await llm.check(sentenceText);
+        } catch (error) {
+          if (error instanceof RateLimitedError) {
+            llmBlockedUntil = Date.now() + Math.max(error.retryAfterMs ?? DEFAULT_RETRY_MS, MIN_RETRY_MS);
+            scheduleLlm(0);
+          }
+          // Any other failure is left for the next edit to retry.
+          return;
+        }
+        cacheLlmResult(sentenceText, found);
+        // The text moved on; the newer edit has its own check queued, which will hit the cache.
+        if (version !== startVersion || disposed) return;
+      }
+
+      llmErrors = [
+        ...llmErrors.filter((e) => e.end <= sentence.start || e.start >= sentence.end),
+        ...found.map((e) => shift(e, sentence.start)),
+      ];
+      options.onChange(errors());
+    }
+  }
+
+  /** Keeps the cache bounded on long-lived fields by forgetting the oldest sentence first. */
+  function cacheLlmResult(sentenceText: string, found: CheckError[]): void {
+    llmCache.set(sentenceText, found);
+    if (llmCache.size > MAX_CACHED_SENTENCES) llmCache.delete(llmCache.keys().next().value!);
   }
 
   function dispose(): void {
     disposed = true;
     if (timer) clearTimeout(timer);
+    if (llmTimer) clearTimeout(llmTimer);
   }
 
   return { update, dispose };
@@ -211,4 +302,33 @@ function splitParagraphs(text: string): Range[] {
   }
   push(text.length);
   return paragraphs;
+}
+
+const SENTENCE_END = /[.?!]/;
+const CLOSERS = /[.?!"'”’)\]]/;
+
+/**
+ * The sentences ready for the LLM: those ending in `.`, `?` or `!` (plus any
+ * closing quotes or brackets) followed by whitespace or the end of the text.
+ * A sentence never spans a line break, so an unfinished line is skipped.
+ */
+function completeSentences(text: string): Range[] {
+  const sentences: Range[] = [];
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]!;
+    if (char === '\n') {
+      start = -1;
+    } else if (start === -1) {
+      if (!/\s/.test(char)) start = i;
+    }
+    if (start === -1 || !SENTENCE_END.test(char)) continue;
+    let end = i + 1;
+    while (end < text.length && CLOSERS.test(text[end]!)) end++;
+    if (end < text.length && !/\s/.test(text[end]!)) continue;
+    sentences.push({ start, end });
+    start = -1;
+    i = end - 1;
+  }
+  return sentences;
 }

@@ -1,11 +1,12 @@
 import type { CheckError } from './errors';
 
-export interface CheckFieldMessage {
-  type: 'check-field';
+/** Asks the background worker to run an engine: LanguageTool on a paragraph, or the LLM on one complete sentence. */
+export interface CheckMessage {
+  type: 'check-field' | 'check-sentence';
   text: string;
 }
 
-export type CheckFieldResponse =
+export type CheckResponse =
   | { ok: true; errors: CheckError[] }
   | { ok: false; reason: 'rate-limited'; retryAfterMs?: number }
   | { ok: false; reason: 'failed' };

@@ -5,6 +5,8 @@ export type EnglishVariant = 'en-US' | 'en-GB';
 export interface Settings {
   /** API key for the LLM engine's provider; empty until the user enters one. */
   llmApiKey: string;
+  /** Whether the user accepted, on the Consent page, that text is sent to the LLM's provider. */
+  llmConsent: boolean;
   englishVariant: EnglishVariant;
   languageToolUrl: string;
   /** Sites whose text is never sent to the LLM (LanguageTool still runs). */
@@ -17,6 +19,7 @@ export const DEFAULT_LANGUAGE_TOOL_URL = 'https://api.languagetool.org';
 
 export const DEFAULT_SETTINGS: Settings = {
   llmApiKey: '',
+  llmConsent: false,
   englishVariant: 'en-US',
   languageToolUrl: DEFAULT_LANGUAGE_TOOL_URL,
   excludedSites: [],
@@ -28,6 +31,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
   const value = raw ?? {};
   return {
     llmApiKey: typeof value.llmApiKey === 'string' ? value.llmApiKey.trim() : DEFAULT_SETTINGS.llmApiKey,
+    llmConsent: value.llmConsent === true,
     englishVariant: value.englishVariant === 'en-GB' || value.englishVariant === 'en-US' ? value.englishVariant : DEFAULT_SETTINGS.englishVariant,
     languageToolUrl: normalizeUrl(value.languageToolUrl) ?? DEFAULT_LANGUAGE_TOOL_URL,
     excludedSites: normalizeSites(value.excludedSites),
@@ -87,4 +91,17 @@ export function normalizeUrl(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Whether text typed on `hostname` may be sent to the LLM: only with consent,
+ * a key to send it with, and never on an excluded or disabled site.
+ */
+export function isLlmAllowed(hostname: string, settings: Settings): boolean {
+  return (
+    settings.llmConsent &&
+    settings.llmApiKey !== '' &&
+    !isSiteExcluded(hostname, settings) &&
+    !isSiteDisabled(hostname, settings)
+  );
 }

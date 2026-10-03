@@ -1,5 +1,5 @@
 import { storage } from 'wxt/utils/storage';
-import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from './settings';
+import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings, type Settings } from './settings';
 
 /** Local, not sync: the API key shouldn't be copied to other browsers' profiles. */
 const settingsItem = storage.defineItem<Partial<Settings>>('local:settings', {
@@ -13,7 +13,7 @@ export const store = {
   },
 
   async saveSettings(changes: Partial<Settings>): Promise<Settings> {
-    const next = normalizeSettings({ ...(await this.getSettings()), ...changes });
+    const next = mergeSettings(await this.getSettings(), changes);
     await settingsItem.setValue(next);
     return next;
   },

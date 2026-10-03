@@ -1,11 +1,14 @@
 import type { LanguageToolConfig } from './engines/language-tool';
+import { DEFAULT_LLM_PROVIDER, isLlmProviderId, type LlmProviderId } from './llm-providers';
 
 export type EnglishVariant = 'en-US' | 'en-GB';
 
 export interface Settings {
+  /** Which LLM provider receives finished sentences. */
+  llmProvider: LlmProviderId;
   /** API key for the LLM engine's provider; empty until the user enters one. */
   llmApiKey: string;
-  /** Whether the user accepted, on the Consent page, that text is sent to the LLM's provider. */
+  /** Whether the user accepted, on the Consent page, that text is sent to `llmProvider`. */
   llmConsent: boolean;
   englishVariant: EnglishVariant;
   languageToolUrl: string;
@@ -18,6 +21,7 @@ export interface Settings {
 export const DEFAULT_LANGUAGE_TOOL_URL = 'https://api.languagetool.org';
 
 export const DEFAULT_SETTINGS: Settings = {
+  llmProvider: DEFAULT_LLM_PROVIDER,
   llmApiKey: '',
   llmConsent: false,
   englishVariant: 'en-US',
@@ -30,12 +34,28 @@ export const DEFAULT_SETTINGS: Settings = {
 export function normalizeSettings(raw: Partial<Settings> | null | undefined): Settings {
   const value = raw ?? {};
   return {
+    llmProvider: isLlmProviderId(value.llmProvider) ? value.llmProvider : DEFAULT_SETTINGS.llmProvider,
     llmApiKey: typeof value.llmApiKey === 'string' ? value.llmApiKey.trim() : DEFAULT_SETTINGS.llmApiKey,
     llmConsent: value.llmConsent === true,
     englishVariant: value.englishVariant === 'en-GB' || value.englishVariant === 'en-US' ? value.englishVariant : DEFAULT_SETTINGS.englishVariant,
     languageToolUrl: normalizeUrl(value.languageToolUrl) ?? DEFAULT_LANGUAGE_TOOL_URL,
     excludedSites: normalizeSites(value.excludedSites),
     disabledSites: normalizeSites(value.disabledSites),
+  };
+}
+
+/**
+ * `current` with `changes` applied. Changing the LLM provider revokes consent
+ * (the user must accept the new recipient on the Consent page) and drops the
+ * old key, so neither text nor a key reaches a provider it wasn't meant for.
+ */
+export function mergeSettings(current: Settings, changes: Partial<Settings>): Settings {
+  const next = normalizeSettings({ ...current, ...changes });
+  if (next.llmProvider === current.llmProvider) return next;
+  return {
+    ...next,
+    llmConsent: false,
+    llmApiKey: next.llmApiKey === current.llmApiKey ? '' : next.llmApiKey,
   };
 }
 

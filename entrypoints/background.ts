@@ -1,7 +1,7 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { browser } from 'wxt/browser';
 import { RateLimitedError } from '../lib/engine';
-import { createGlmEngine } from '../lib/engines/glm';
+import { createLlmEngine } from '../lib/engines/llm';
 import { createLanguageToolEngine } from '../lib/engines/language-tool';
 import type { CheckError } from '../lib/errors';
 import type { CheckMessage, CheckResponse } from '../lib/messages';
@@ -24,7 +24,7 @@ export default defineBackground(() => {
         // The checker gates this too; this is the last line before text leaves the browser.
         const hostname = sender.url ? new URL(sender.url).hostname : '';
         if (!hostname || !isLlmAllowed(hostname, settings)) throw new Error('LLM not allowed');
-        return createGlmEngine({ apiKey: settings.llmApiKey }).check(message.text);
+        return createLlmEngine(settings.llmProvider, settings.llmApiKey).check(message.text);
       });
     }
   });

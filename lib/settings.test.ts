@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLanguageToolEngine } from './engines/language-tool';
 import {
   DEFAULT_SETTINGS,
+  isLlmAllowed,
   isSiteDisabled,
   isSiteExcluded,
   languageToolConfig,
+  mergeSettings,
   normalizeSettings,
   normalizeSite,
 } from './settings';
@@ -104,5 +106,57 @@ describe('LLM consent', () => {
     expect(normalizeSettings(undefined).llmConsent).toBe(false);
     expect(normalizeSettings({ llmConsent: 'yes' as unknown as boolean }).llmConsent).toBe(false);
     expect(normalizeSettings({ llmConsent: true }).llmConsent).toBe(true);
+  });
+});
+
+describe('LLM provider', () => {
+  const glmUser = normalizeSettings({ llmProvider: 'glm', llmApiKey: 'glm-key', llmConsent: true });
+
+  it('defaults to GLM when missing or unrecognised, so older Settings keep working', () => {
+    expect(normalizeSettings(undefined).llmProvider).toBe('glm');
+    expect(normalizeSettings({ llmApiKey: 'k', llmConsent: true }).llmProvider).toBe('glm');
+    expect(normalizeSettings({ llmProvider: 'openai' as never }).llmProvider).toBe('glm');
+  });
+
+  it('keeps a valid provider', () => {
+    expect(normalizeSettings({ llmProvider: 'gemini' }).llmProvider).toBe('gemini');
+    expect(normalizeSettings({ llmProvider: 'glm' }).llmProvider).toBe('glm');
+  });
+
+  it('gates the LLM the same way for either provider', () => {
+    for (const llmProvider of ['glm', 'gemini'] as const) {
+      const allowed = normalizeSettings({ llmProvider, llmApiKey: 'k', llmConsent: true, excludedSites: ['x.com'] });
+      expect(isLlmAllowed('github.com', allowed)).toBe(true);
+      expect(isLlmAllowed('x.com', allowed)).toBe(false);
+      expect(isLlmAllowed('github.com', { ...allowed, llmConsent: false })).toBe(false);
+      expect(isLlmAllowed('github.com', { ...allowed, llmApiKey: '' })).toBe(false);
+    }
+  });
+
+  it('revokes consent and clears the key when the provider changes', () => {
+    const next = mergeSettings(glmUser, { llmProvider: 'gemini' });
+
+    expect(next).toMatchObject({ llmProvider: 'gemini', llmConsent: false, llmApiKey: '' });
+    expect(isLlmAllowed('github.com', next)).toBe(false);
+  });
+
+  it('never carries the old key over, even when it is resubmitted with the change', () => {
+    const next = mergeSettings(glmUser, { llmProvider: 'gemini', llmApiKey: 'glm-key', llmConsent: true });
+
+    expect(next).toMatchObject({ llmApiKey: '', llmConsent: false });
+  });
+
+  it('keeps a new key entered together with the provider change, but still needs fresh consent', () => {
+    const next = mergeSettings(glmUser, { llmProvider: 'gemini', llmApiKey: 'gemini-key', llmConsent: true });
+
+    expect(next).toMatchObject({ llmProvider: 'gemini', llmApiKey: 'gemini-key', llmConsent: false });
+  });
+
+  it('leaves key and consent alone when the provider is unchanged', () => {
+    expect(mergeSettings(glmUser, { llmProvider: 'glm', englishVariant: 'en-GB' })).toMatchObject({
+      llmApiKey: 'glm-key',
+      llmConsent: true,
+    });
+    expect(mergeSettings(glmUser, { excludedSites: ['a.com'] })).toMatchObject({ llmApiKey: 'glm-key', llmConsent: true });
   });
 });

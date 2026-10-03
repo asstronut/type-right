@@ -1,5 +1,6 @@
 import type { CheckError } from './errors';
 import { RateLimitedError, type Engine } from './engine';
+import type { LlmProviderId } from './llm-providers';
 import { isLlmAllowed, isSiteDisabled, type Settings } from './settings';
 
 export interface CheckEngines {
@@ -66,6 +67,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let llmBlockedUntil = 0;
   /** LLM results by sentence text, so an unchanged sentence is never sent twice. */
   const llmCache = new Map<string, CheckError[]>();
+  /** The LLM provider the cached results came from. */
+  let llmCacheProvider: LlmProviderId | undefined;
 
   function update(next: string): CheckError[] {
     if (next === text) return errors();
@@ -171,6 +174,12 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         options.onChange(errors());
       }
       return;
+    }
+    const provider = options.site?.settings().llmProvider;
+    if (provider !== llmCacheProvider) {
+      // Another provider's answers would not be this one's.
+      llmCache.clear();
+      llmCacheProvider = provider;
     }
     const waitMs = llmBlockedUntil - Date.now();
     if (waitMs > 0) return scheduleLlm(waitMs);

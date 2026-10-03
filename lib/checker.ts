@@ -200,7 +200,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     }
     if (llmFailure && llmFailure.credentials !== credentials()) {
       // The user changed the key or provider, likely to fix the failure: try again now.
-      llmFailure = undefined;
+      setLlmFailure(undefined);
       llmBlockedUntil = 0;
     }
     const waitMs = llmBlockedUntil - Date.now();

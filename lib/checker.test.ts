@@ -591,6 +591,8 @@ describe('createFieldChecker', () => {
 
         expect(models()).toEqual(provider.models);
         expect(latest).toEqual([]);
+        // An overloaded provider is not the user's quota running out.
+        expect(health).toEqual({ state: 'failing', reason: 'bad-response' });
       });
     });
 

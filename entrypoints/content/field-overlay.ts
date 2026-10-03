@@ -90,6 +90,7 @@ export class FieldOverlay {
   private readonly badge: HTMLDivElement;
   private spans: { span: HTMLSpanElement; error: CheckError }[] = [];
   private readonly listeners = new AbortController();
+  private readonly resizeObserver: ResizeObserver;
 
   constructor(field: HTMLTextAreaElement) {
     this.field = field;
@@ -123,6 +124,9 @@ export class FieldOverlay {
     document.documentElement.appendChild(this.badge);
 
     field.addEventListener('scroll', () => this.syncScroll(), { signal: this.listeners.signal });
+    // Follows the field being resized, and hides the badge once the field is removed or hidden.
+    this.resizeObserver = new ResizeObserver(() => this.syncBadge());
+    this.resizeObserver.observe(field);
   }
 
   render(text: string, errors: CheckError[]): void {
@@ -170,6 +174,7 @@ export class FieldOverlay {
 
   destroy(): void {
     this.listeners.abort();
+    this.resizeObserver.disconnect();
     this.el.remove();
     this.badge.remove();
   }
@@ -194,8 +199,8 @@ export class FieldOverlay {
   private syncBadge(): void {
     if (!this.badge.textContent) return;
     const rect = this.field.getBoundingClientRect();
-    // A hidden field has no box; neither should its badge.
-    if (!rect.width || !rect.height) {
+    // A removed or hidden field has no box; neither should its badge.
+    if (!this.field.isConnected || !rect.width || !rect.height) {
       this.badge.style.display = 'none';
       return;
     }

@@ -67,6 +67,8 @@ async function checkWithin(
   let response = await request(provider, apiKey, provider.model, sentence, signal);
   if (await provider.isOverloaded(response)) {
     response = await request(provider, apiKey, provider.fallbackModel, sentence, signal);
+    // Overloaded too: the provider is struggling, which is not this key's quota.
+    if (await provider.isOverloaded(response)) throw new LlmFailedError('bad-response');
   }
 
   if (response.status === 401 || response.status === 403) throw new LlmFailedError('no-key');

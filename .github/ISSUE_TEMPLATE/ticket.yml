@@ -1,0 +1,31 @@
+# Mirrors the issue template in mattpocock-skills 1.2.3 (to-tickets). Re-check sections when the plugin updates.
+name: Ticket
+description: One buildable slice of work, usually part of a spec. Same shape as /to-tickets.
+labels: [needs-triage]
+body:
+  - type: input
+    id: parent
+    attributes:
+      label: Parent
+      description: The parent spec issue, if any.
+      placeholder: "#1"
+  - type: textarea
+    id: what
+    attributes:
+      label: What to build
+      description: The end-to-end behaviour this makes work, from the user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      value: None (can start immediately)

@@ -1,0 +1,58 @@
+# Area options name UI surfaces and engines. Update them when one is added or removed (see PR checklist).
+name: Bug
+description: Something Type Right does wrong or doesn't do.
+labels: [bug, needs-triage]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What went wrong, including the exact text you typed.
+      placeholder: Typed "I will recieve it" in a GitHub comment box. No underline appeared.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open https://github.com/... and click the comment box
+        2. Type "I will recieve it"
+        3. Wait 2 seconds
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      placeholder: Red underline under "recieve", hover card suggests "receive".
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Underline (missing, wrong place, wrong colour)
+        - Hover card / Apply
+        - Popup
+        - LLM badge or LLM check (wording)
+        - LanguageTool check (spelling, grammar)
+        - Options / Consent page
+        - Other
+  - type: input
+    id: site
+    attributes:
+      label: Site and field
+      placeholder: github.com, issue comment textarea
+  - type: input
+    id: env
+    attributes:
+      label: Browser, extension version, LLM provider
+      placeholder: Chrome 140, 0.1.0, Gemini
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshot / console errors
+      description: Paste or drag images; console errors from the page or the service worker.

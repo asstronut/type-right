@@ -1,3 +1,4 @@
+# Mirrors the spec template in mattpocock-skills 1.2.3 (to-spec). Re-check sections when the plugin updates.
 name: Spec
 description: A new feature or change, described from the user's side. Same shape as /to-spec.
 labels: [needs-triage]

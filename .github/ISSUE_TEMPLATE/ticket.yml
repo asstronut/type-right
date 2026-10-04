@@ -1,3 +1,4 @@
+# Mirrors the issue template in mattpocock-skills 1.2.3 (to-tickets). Re-check sections when the plugin updates.
 name: Ticket
 description: One buildable slice of work, usually part of a spec. Same shape as /to-tickets.
 labels: [needs-triage]

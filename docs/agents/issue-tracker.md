@@ -6,6 +6,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
 - **Issue shape**: `gh issue create` skips `.github/ISSUE_TEMPLATE/`. Specs and tickets follow the `/to-spec` and `/to-tickets` templates (the forms mirror them). For a bug, use the sections of `bug.yml` (What happened, Steps to reproduce, Expected, Area, Site and field, Browser / extension version / LLM provider) and labels `bug`, `needs-triage`.
+- **Keeping the forms in sync**: `spec.yml` and `ticket.yml` mirror the mattpocock-skills templates at the version named in their header comment. After the plugin updates, compare `/to-spec` and `/to-tickets` templates with the forms and update both the forms and the version comment.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`

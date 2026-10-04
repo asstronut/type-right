@@ -1,3 +1,4 @@
+# Area options name UI surfaces and engines. Update them when one is added or removed (see PR checklist).
 name: Bug
 description: Something Type Right does wrong or doesn't do.
 labels: [bug, needs-triage]
@@ -35,6 +36,7 @@ body:
       options:
         - Underline (missing, wrong place, wrong colour)
         - Hover card / Apply
+        - Popup
         - LLM badge or LLM check (wording)
         - LanguageTool check (spelling, grammar)
         - Options / Consent page

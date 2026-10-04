@@ -13,6 +13,10 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+## Opening a pull request
+
+Use `.github/PULL_REQUEST_TEMPLATE.md` for the body. `gh pr create --body` skips the template, so copy its sections (Closes, What, Testing, Not done / follow-ups, Checklist) and fill them in. Tick only the checklist items you actually ran.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

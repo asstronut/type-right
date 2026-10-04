@@ -1,0 +1,45 @@
+name: Spec
+description: A new feature or change, described from the user's side. Same shape as /to-spec.
+labels: [needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: The problem the user is facing, from the user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solution
+      description: The solution, from the user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: stories
+    attributes:
+      label: User Stories
+      description: Numbered list, "As a <actor>, I want <feature>, so that <benefit>".
+      value: |
+        1. As a ..., I want ..., so that ...
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Decisions
+      description: Modules touched, interfaces, architecture, API contracts. No file paths or code.
+  - type: textarea
+    id: testing
+    attributes:
+      label: Testing Decisions
+      description: What gets tested, at which seam, and prior art in the codebase.
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of Scope
+  - type: textarea
+    id: notes
+    attributes:
+      label: Further Notes

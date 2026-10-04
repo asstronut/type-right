@@ -1,3 +1,5 @@
+import type { LlmHealth } from '../../lib/checker';
+import type { LlmFailure } from '../../lib/engine';
 import type { CheckError } from '../../lib/errors';
 
 const MIRROR_PROPERTIES = [
@@ -34,6 +36,38 @@ export const KIND_COLORS: Record<CheckError['kind'], string> = {
   wording: '#7c3aed',
 };
 
+const LT_STILL_WORKS = 'LanguageTool underlines keep working.';
+
+const FAILURE_REASONS: Record<LlmFailure, string> = {
+  'no-key': 'No API key is set, or the provider rejected it. Set one in the Type Right options.',
+  quota: "The API key's quota or rate limit is used up. Retrying in a minute.",
+  network: "The LLM provider can't be reached. Retrying in a minute.",
+  timeout: 'The LLM took more than 8 seconds to answer. Retrying in a minute.',
+  'bad-response': 'The LLM provider sent an unexpected response. Retrying in a minute.',
+};
+
+/** What the field's LLM badge shows for each LLM health. */
+function badgeFor(health: LlmHealth): { label: string; color: string; title: string } {
+  switch (health.state) {
+    case 'active':
+      return { label: 'LLM', color: '#16a34a', title: 'Finished sentences are also checked by the LLM.' };
+    case 'lt-only':
+      return {
+        label: 'LT only',
+        color: '#6b7280',
+        title:
+          health.reason === 'no-consent'
+            ? 'Only LanguageTool checks this field: sending text to the LLM is not allowed. Change this in the Type Right options.'
+            : 'Only LanguageTool checks this field: this site is excluded from the LLM.',
+      };
+    case 'failing':
+      return { label: 'LLM', color: '#dc2626', title: `LLM paused. ${FAILURE_REASONS[health.reason]} ${LT_STILL_WORKS}` };
+  }
+}
+
+/** Keeps the badge clear of the textarea's resize grip in the bottom-right corner. */
+const BADGE_INSET_PX = { right: 18, bottom: 4 };
+
 /** The underline is drawn just below the glyphs; count it as part of the hover target. */
 const UNDERLINE_HIT_SLOP_PX = 4;
 
@@ -52,8 +86,11 @@ export interface ErrorHit {
 export class FieldOverlay {
   private readonly field: HTMLTextAreaElement;
   private readonly el: HTMLDivElement;
+  /** Says whether the field's text goes to the LLM; hovering it tells why. */
+  private readonly badge: HTMLDivElement;
   private spans: { span: HTMLSpanElement; error: CheckError }[] = [];
   private readonly listeners = new AbortController();
+  private readonly resizeObserver: ResizeObserver;
 
   constructor(field: HTMLTextAreaElement) {
     this.field = field;
@@ -70,13 +107,40 @@ export class FieldOverlay {
     });
     document.documentElement.appendChild(this.el);
 
+    this.badge = document.createElement('div');
+    this.badge.setAttribute('data-type-right-badge', '');
+    Object.assign(this.badge.style, {
+      position: 'fixed',
+      display: 'none',
+      padding: '1px 5px',
+      borderRadius: '8px',
+      font: '600 10px/14px system-ui, sans-serif',
+      color: '#fff',
+      opacity: '0.85',
+      cursor: 'default',
+      userSelect: 'none',
+      zIndex: '2147483647',
+    });
+    document.documentElement.appendChild(this.badge);
+
     field.addEventListener('scroll', () => this.syncScroll(), { signal: this.listeners.signal });
+    // Follows the field being resized, and hides the badge once the field is removed or hidden.
+    this.resizeObserver = new ResizeObserver(() => this.syncBadge());
+    this.resizeObserver.observe(field);
   }
 
   render(text: string, errors: CheckError[]): void {
     if (this.field.value !== text) return; // a newer keystroke has already superseded this response
     this.reposition();
     this.renderSpans(text, errors);
+  }
+
+  setLlmHealth(health: LlmHealth): void {
+    const { label, color, title } = badgeFor(health);
+    this.badge.textContent = label;
+    this.badge.title = title;
+    this.badge.style.background = color;
+    this.syncBadge();
   }
 
   /** Re-syncs position/scroll only, without touching the rendered content. */
@@ -110,7 +174,9 @@ export class FieldOverlay {
 
   destroy(): void {
     this.listeners.abort();
+    this.resizeObserver.disconnect();
     this.el.remove();
+    this.badge.remove();
   }
 
   private syncGeometry(): void {
@@ -127,6 +193,20 @@ export class FieldOverlay {
     for (const prop of MIRROR_PROPERTIES) {
       this.el.style.setProperty(prop, computed.getPropertyValue(prop));
     }
+    this.syncBadge();
+  }
+
+  private syncBadge(): void {
+    if (!this.badge.textContent) return;
+    const rect = this.field.getBoundingClientRect();
+    // A removed or hidden field has no box; neither should its badge.
+    if (!this.field.isConnected || !rect.width || !rect.height) {
+      this.badge.style.display = 'none';
+      return;
+    }
+    this.badge.style.display = 'block';
+    this.badge.style.left = `${rect.right - BADGE_INSET_PX.right - this.badge.offsetWidth}px`;
+    this.badge.style.top = `${rect.bottom - BADGE_INSET_PX.bottom - this.badge.offsetHeight}px`;
   }
 
   private syncScroll(): void {

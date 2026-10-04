@@ -1,7 +1,7 @@
 import type { CheckError } from './errors';
-import { RateLimitedError, type Engine } from './engine';
+import { LlmFailedError, RateLimitedError, type Engine, type LlmFailure } from './engine';
 import type { LlmProviderId } from './llm-providers';
-import { isLlmAllowed, isSiteDisabled, type Settings } from './settings';
+import { isLlmAllowed, isSiteDisabled, isSiteExcluded, type Settings } from './settings';
 
 export interface CheckEngines {
   languageTool: Engine;
@@ -15,12 +15,23 @@ export interface CheckSite {
   settings(): Settings;
 }
 
+/**
+ * Whether the field's text goes to the LLM: `active` when it does, `lt-only`
+ * when the user chose not to, `failing` when it should but can't right now.
+ */
+export type LlmHealth =
+  | { state: 'active' }
+  | { state: 'lt-only'; reason: 'no-consent' | 'excluded-site' }
+  | { state: 'failing'; reason: LlmFailure };
+
 export interface FieldCheckerOptions {
   engines: CheckEngines;
   /** The site the field is on; without it every check runs. */
   site?: CheckSite;
   /** Called with the field's current Errors whenever a check changes them. */
   onChange(errors: CheckError[]): void;
+  /** Called with the LLM health whenever an LLM check changes it. */
+  onLlmHealthChange?(health: LlmHealth): void;
   debounceMs?: number;
   llmDebounceMs?: number;
 }
@@ -32,6 +43,8 @@ export interface FieldChecker {
    * away, and schedules a debounced re-check of only the edited paragraph.
    */
   update(text: string): CheckError[];
+  /** The LLM health for the current Settings. */
+  llmHealth(): LlmHealth;
   dispose(): void;
 }
 
@@ -40,6 +53,8 @@ const DEFAULT_LLM_DEBOUNCE_MS = 1500;
 const MAX_CACHED_SENTENCES = 500;
 const DEFAULT_RETRY_MS = 30_000;
 const MIN_RETRY_MS = 1_000;
+/** After any LLM failure, no LLM request is made for this long. */
+const LLM_FAILURE_PAUSE_MS = 60_000;
 /** LanguageTool's free tier rejects requests over 20k characters. */
 const MAX_REQUEST_CHARS = 20_000;
 
@@ -69,6 +84,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   const llmCache = new Map<string, CheckError[]>();
   /** The LLM provider the cached results came from. */
   let llmCacheProvider: LlmProviderId | undefined;
+  /** The last LLM check's failure, and the provider and key it happened with. */
+  let llmFailure: { reason: LlmFailure; credentials: string } | undefined;
 
   function update(next: string): CheckError[] {
     if (next === text) return errors();
@@ -181,6 +198,11 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       llmCache.clear();
       llmCacheProvider = provider;
     }
+    if (llmFailure && llmFailure.credentials !== credentials()) {
+      // The user changed the key or provider, likely to fix the failure: try again now.
+      setLlmFailure(undefined);
+      llmBlockedUntil = 0;
+    }
     const waitMs = llmBlockedUntil - Date.now();
     if (waitMs > 0) return scheduleLlm(waitMs);
     if (llmRunning) return scheduleLlm(llmDebounceMs);
@@ -203,13 +225,12 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         try {
           found = await llm.check(sentenceText);
         } catch (error) {
-          if (error instanceof RateLimitedError) {
-            llmBlockedUntil = Date.now() + Math.max(error.retryAfterMs ?? DEFAULT_RETRY_MS, MIN_RETRY_MS);
-            scheduleLlm(0);
-          }
-          // Any other failure is left for the next edit to retry.
+          setLlmFailure(error instanceof LlmFailedError ? error.failure : 'bad-response');
+          llmBlockedUntil = Date.now() + LLM_FAILURE_PAUSE_MS;
+          scheduleLlm(0);
           return;
         }
+        setLlmFailure(undefined);
         cacheLlmResult(sentenceText, found);
         // The text moved on; the newer edit has its own check queued, which will hit the cache.
         if (version !== startVersion || disposed) return;
@@ -221,6 +242,29 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       ];
       options.onChange(errors());
     }
+  }
+
+  function llmHealth(): LlmHealth {
+    const settings = options.site?.settings();
+    if (settings && options.site) {
+      if (!settings.llmConsent) return { state: 'lt-only', reason: 'no-consent' };
+      if (isSiteExcluded(options.site.hostname, settings)) return { state: 'lt-only', reason: 'excluded-site' };
+      if (!settings.llmApiKey) return { state: 'failing', reason: 'no-key' };
+    }
+    if (llmFailure && llmFailure.credentials === credentials()) return { state: 'failing', reason: llmFailure.reason };
+    return { state: 'active' };
+  }
+
+  function setLlmFailure(reason: LlmFailure | undefined): void {
+    if (reason === llmFailure?.reason) return;
+    llmFailure = reason && { reason, credentials: credentials() };
+    options.onLlmHealthChange?.(llmHealth());
+  }
+
+  /** Identifies the provider and key an LLM request is sent with. */
+  function credentials(): string {
+    const settings = options.site?.settings();
+    return settings ? `${settings.llmProvider}:${settings.llmApiKey}` : '';
   }
 
   /** Keeps the cache bounded on long-lived fields by forgetting the oldest sentence first. */
@@ -235,7 +279,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (llmTimer) clearTimeout(llmTimer);
   }
 
-  return { update, dispose };
+  return { update, llmHealth, dispose };
 }
 
 interface Edit {

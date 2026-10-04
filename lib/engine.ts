@@ -11,3 +11,14 @@ export class RateLimitedError extends Error {
     this.name = 'RateLimitedError';
   }
 }
+
+/** Why the LLM could not check a sentence. */
+export type LlmFailure = 'no-key' | 'quota' | 'network' | 'timeout' | 'bad-response';
+
+/** The LLM request failed for a known reason, shown to the user on the field's LLM badge. */
+export class LlmFailedError extends Error {
+  constructor(readonly failure: LlmFailure) {
+    super(`LLM check failed: ${failure}`);
+    this.name = 'LlmFailedError';
+  }
+}

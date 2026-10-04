@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { FieldOverlay } from './field-overlay';
 import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
-import { RateLimitedError, type Engine } from '../../lib/engine';
+import { LlmFailedError, RateLimitedError, type Engine } from '../../lib/engine';
 import type { CheckMessage, CheckResponse } from '../../lib/messages';
 import { isSiteDisabled } from '../../lib/settings';
 import { store } from '../../lib/store';
@@ -15,7 +15,8 @@ function backgroundEngine(type: CheckMessage['type'], name: string): Engine {
       const message: CheckMessage = { type, text };
       const response = (await browser.runtime.sendMessage(message)) as CheckResponse | undefined;
       if (response?.ok) return response.errors;
-      if (response && response.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
+      if (response?.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
+      if (response?.reason === 'llm-failed') throw new LlmFailedError(response.failure);
       throw new Error(`${name} check failed`);
     },
   };
@@ -31,6 +32,13 @@ interface FieldState {
   checker: FieldChecker;
 }
 
+interface Running {
+  /** Removes all trace of Type Right from the page. */
+  stop(): void;
+  /** Re-reads every field's LLM health for its badge, after a Settings change. */
+  refreshLlmHealth(): void;
+}
+
 export default defineContentScript({
   matches: ['<all_urls>'],
   async main() {
@@ -39,11 +47,11 @@ export default defineContentScript({
     const site = { hostname, settings: () => settings };
 
     const hover = new HoverController();
-    /** Undoes `start()` while Type Right is running on this page. */
-    let stop: (() => void) | null = null;
+    /** Set while Type Right is running on this page. */
+    let running: Running | null = null;
 
-    /** Attaches to every textarea on the page; returns a function that removes all trace of it. */
-    function start(): () => void {
+    /** Attaches to every textarea on the page. */
+    function start(): Running {
       const fields = new Map<HTMLTextAreaElement, FieldState>();
       const listeners = new AbortController();
       const listen = { signal: listeners.signal };
@@ -55,7 +63,9 @@ export default defineContentScript({
           engines,
           site,
           onChange: (errors) => overlay.render(field.value, errors),
+          onLlmHealthChange: (health) => overlay.setLlmHealth(health),
         });
+        overlay.setLlmHealth(checker.llmHealth());
         fields.set(field, { overlay, checker });
         hover.watch(field, overlay, listeners.signal);
         field.addEventListener('input', () => {
@@ -90,14 +100,19 @@ export default defineContentScript({
       document.addEventListener('scroll', repositionAll, { capture: true, signal: listeners.signal });
       window.addEventListener('resize', repositionAll, listen);
 
-      return () => {
-        observer.disconnect();
-        listeners.abort();
-        hover.close();
-        fields.forEach(({ overlay, checker }) => {
-          checker.dispose();
-          overlay.destroy();
-        });
+      return {
+        stop() {
+          observer.disconnect();
+          listeners.abort();
+          hover.close();
+          fields.forEach(({ overlay, checker }) => {
+            checker.dispose();
+            overlay.destroy();
+          });
+        },
+        refreshLlmHealth() {
+          fields.forEach(({ overlay, checker }) => overlay.setLlmHealth(checker.llmHealth()));
+        },
       };
     }
 
@@ -105,11 +120,11 @@ export default defineContentScript({
     // Options page takes effect without reloading the page.
     function apply(): void {
       const disabled = isSiteDisabled(hostname, settings);
-      if (disabled && stop) {
-        stop();
-        stop = null;
-      } else if (!disabled && !stop) {
-        stop = start();
+      if (disabled && running) {
+        running.stop();
+        running = null;
+      } else if (!disabled && !running) {
+        running = start();
       }
     }
 
@@ -117,6 +132,8 @@ export default defineContentScript({
     store.watchSettings((next) => {
       settings = next;
       apply();
+      // Consent, the key or the site lists may have changed what the LLM badge should say.
+      running?.refreshLlmHealth();
     });
   },
 });

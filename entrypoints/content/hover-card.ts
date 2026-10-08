@@ -125,7 +125,7 @@ export interface HoverCardContent {
   error: CheckError;
   /** Present only when the Error can be fixed in one click. */
   onApply?: (suggestion: string) => void;
-  /** Hides this Error for the field's text. */
+  /** Hides this Error (every occurrence of its word, as ids are per word) in the field. */
   onIgnore: () => void;
   /** Present only for single-word spelling Errors: stops the word being flagged anywhere. */
   onAddToDictionary?: () => void;
@@ -229,7 +229,7 @@ function renderCard({ error, onApply, onIgnore, onAddToDictionary }: HoverCardCo
   card.appendChild(showAnswer);
 
   const actions = el('div', 'actions');
-  actions.appendChild(actionButton('Ignore once', 'Hide this mistake in this field', onIgnore));
+  actions.appendChild(actionButton('Ignore here', 'Hide this mistake everywhere in this field until the page reloads', onIgnore));
   if (onAddToDictionary) {
     actions.appendChild(actionButton('Add to dictionary', 'Never flag this word as a spelling mistake again', onAddToDictionary));
   }

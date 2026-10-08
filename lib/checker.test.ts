@@ -475,7 +475,7 @@ describe('createFieldChecker', () => {
     });
   });
 
-  describe('ignore once', () => {
+  describe('ignore here', () => {
     it('keeps an ignored Error hidden when the paragraph around its unchanged word is re-checked', async () => {
       const field = setup();
       await field.type('I will recieve it');

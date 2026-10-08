@@ -1,5 +1,5 @@
 import { storage } from 'wxt/utils/storage';
-import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings, type Settings } from './settings';
+import { DEFAULT_SETTINGS, dictionaryKey, mergeSettings, normalizeSettings, type Settings } from './settings';
 
 /** Local, not sync: the API key shouldn't be copied to other browsers' profiles. */
 const settingsItem = storage.defineItem<Partial<Settings>>('local:settings', {
@@ -26,7 +26,7 @@ export const store = {
 
   async removeFromDictionary(word: string): Promise<Settings> {
     const { dictionary } = await this.getSettings();
-    return this.saveSettings({ dictionary: dictionary.filter((entry) => entry.toLowerCase() !== word.toLowerCase()) });
+    return this.saveSettings({ dictionary: dictionary.filter((entry) => dictionaryKey(entry) !== dictionaryKey(word)) });
   },
 
   /** Calls `onChange` with the new Settings whenever any extension page saves them. */

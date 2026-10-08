@@ -96,21 +96,25 @@ export function normalizeSite(input: string): string | undefined {
   return host && /^[a-z0-9.-]+$/.test(host) ? host : undefined;
 }
 
+/** Dictionary words match ignoring case and surrounding whitespace. */
+export function dictionaryKey(word: string): string {
+  return word.trim().toLowerCase();
+}
+
 /** Trimmed, non-empty words, each kept once regardless of case. */
 function normalizeDictionary(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const words = new Map<string, string>();
   for (const entry of value) {
     const word = typeof entry === 'string' ? entry.trim() : '';
-    if (word && !words.has(word.toLowerCase())) words.set(word.toLowerCase(), word);
+    if (word && !words.has(dictionaryKey(word))) words.set(dictionaryKey(word), word);
   }
   return [...words.values()];
 }
 
-/** Whether `word` is in the dictionary, ignoring case. */
 export function isInDictionary(word: string, settings: Settings): boolean {
-  const lower = word.trim().toLowerCase();
-  return settings.dictionary.some((entry) => entry.toLowerCase() === lower);
+  const key = dictionaryKey(word);
+  return settings.dictionary.some((entry) => dictionaryKey(entry) === key);
 }
 
 function normalizeSites(value: unknown): string[] {

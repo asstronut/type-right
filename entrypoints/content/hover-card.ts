@@ -127,7 +127,7 @@ export interface HoverCardContent {
   onApply?: (suggestion: string) => void;
   /** Hides this Error for the field's text. */
   onIgnore: () => void;
-  /** Present only for spelling Errors: stops the word being flagged anywhere. */
+  /** Present only for single-word spelling Errors: stops the word being flagged anywhere. */
   onAddToDictionary?: () => void;
 }
 
@@ -229,15 +229,15 @@ function renderCard({ error, onApply, onIgnore, onAddToDictionary }: HoverCardCo
   card.appendChild(showAnswer);
 
   const actions = el('div', 'actions');
-  actions.appendChild(button('Ignore once', 'Hide this mistake in this field', onIgnore));
+  actions.appendChild(actionButton('Ignore once', 'Hide this mistake in this field', onIgnore));
   if (onAddToDictionary) {
-    actions.appendChild(button('Add to dictionary', 'Never flag this word as a spelling mistake again', onAddToDictionary));
+    actions.appendChild(actionButton('Add to dictionary', 'Never flag this word as a spelling mistake again', onAddToDictionary));
   }
   card.appendChild(actions);
   return card;
 }
 
-function button(label: string, title: string, onClick: () => void): HTMLButtonElement {
+function actionButton(label: string, title: string, onClick: () => void): HTMLButtonElement {
   const node = el('button', 'quiet', label);
   node.type = 'button';
   node.title = title;

@@ -91,8 +91,9 @@ export class HoverController {
           this.close();
           actions.ignore(error);
         },
+        // A multi-word span (the LLM may quote one) isn't a word to learn.
         onAddToDictionary:
-          error.kind === 'spelling'
+          error.kind === 'spelling' && !/\s/.test(flagged.trim())
             ? () => {
                 this.close();
                 actions.addToDictionary(flagged);

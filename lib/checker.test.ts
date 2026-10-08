@@ -145,6 +145,7 @@ describe('createFieldChecker', () => {
       update: checker.update,
       llmHealth: checker.llmHealth,
       ignore: checker.ignore,
+      errors: checker.errors,
     };
   }
 
@@ -460,6 +461,17 @@ describe('createFieldChecker', () => {
       await field.type('I will recieve it');
 
       expect(latest).toEqual([]);
+    });
+
+    it('shows the Error again once the word is removed from the dictionary', async () => {
+      const settings: Partial<Settings> = { dictionary: ['recieve'] };
+      const field = setup({ hostname: 'github.com', settings });
+      await field.type('I will recieve it');
+      expect(latest).toEqual([]);
+
+      settings.dictionary = [];
+
+      expect(field.errors().map((e) => e.kind)).toEqual(['spelling']);
     });
   });
 

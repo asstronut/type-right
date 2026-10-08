@@ -120,7 +120,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   /**
    * The field's Errors from both engines, in text order. Where both flag the
    * same words only the LLM's Error is kept, for its clearer explanation.
-   * Ignored Errors and spelling Errors on dictionary words are left out.
+   * Ignored Errors and spelling Errors on dictionary words are left out; an
+   * ignored LLM Error takes the LanguageTool Errors it replaced with it.
    */
   function errors(): CheckError[] {
     const unmatched = ltErrors.filter((lt) => !llmErrors.some((llm) => lt.start < llm.end && llm.start < lt.end));
@@ -263,8 +264,9 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
 
   function ignore(id: string): CheckError[] {
     ignored.add(id);
-    options.onChange(errors());
-    return errors();
+    const remaining = errors();
+    options.onChange(remaining);
+    return remaining;
   }
 
   function llmHealth(): LlmHealth {

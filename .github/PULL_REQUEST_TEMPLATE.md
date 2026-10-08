@@ -18,5 +18,5 @@ Closes #
 - [ ] `npm test` passes
 - [ ] `npm run build` clean
 - [ ] Checked by hand in the browser (or listed above as not done)
-- [ ] README / `CONTEXT.md` / `docs/adr/` updated if behaviour or terms changed
+- [ ] README / `GLOSSARY.md` / `docs/adr/` updated if behaviour or terms changed
 - [ ] Bug form Area options updated if a UI surface, engine or provider was added or removed

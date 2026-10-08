@@ -144,6 +144,7 @@ describe('createFieldChecker', () => {
       },
       update: checker.update,
       llmHealth: checker.llmHealth,
+      ignore: checker.ignore,
     };
   }
 
@@ -449,6 +450,39 @@ describe('createFieldChecker', () => {
       await field.type('I will recieve it');
 
       expect(sentTexts()).toEqual(['I will recieve it']);
+    });
+  });
+
+  describe('personal dictionary', () => {
+    it('produces no spelling Error for a dictionary word', async () => {
+      const field = setup({ hostname: 'github.com', settings: { dictionary: ['Recieve'] } });
+
+      await field.type('I will recieve it');
+
+      expect(latest).toEqual([]);
+    });
+  });
+
+  describe('ignore once', () => {
+    it('keeps an ignored Error hidden when unchanged text is re-checked', async () => {
+      const field = setup();
+      await field.type('I will recieve it');
+      const [error] = latest;
+
+      expect(field.ignore(error!.id)).toEqual([]);
+      await field.type('I will recieve it. Thanks');
+
+      expect(sentTexts()).toEqual(['I will recieve it', 'I will recieve it. Thanks']);
+      expect(latest).toEqual([]);
+    });
+
+    it('still shows other Errors in the field', async () => {
+      const field = setup();
+      await field.type('I will recieve a apple');
+
+      field.ignore(latest.find((e) => e.kind === 'spelling')!.id);
+
+      expect(latest.map((e) => e.kind)).toEqual(['grammar']);
     });
   });
 

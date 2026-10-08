@@ -18,6 +18,17 @@ export const store = {
     return next;
   },
 
+  /** Adds `word` to the personal dictionary (a no-op if it's already there, in any case). */
+  async addToDictionary(word: string): Promise<Settings> {
+    const { dictionary } = await this.getSettings();
+    return this.saveSettings({ dictionary: [...dictionary, word] });
+  },
+
+  async removeFromDictionary(word: string): Promise<Settings> {
+    const { dictionary } = await this.getSettings();
+    return this.saveSettings({ dictionary: dictionary.filter((entry) => entry.toLowerCase() !== word.toLowerCase()) });
+  },
+
   /** Calls `onChange` with the new Settings whenever any extension page saves them. */
   watchSettings(onChange: (settings: Settings) => void): () => void {
     return settingsItem.watch((value) => onChange(normalizeSettings(value)));

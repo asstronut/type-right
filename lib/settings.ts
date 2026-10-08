@@ -16,6 +16,8 @@ export interface Settings {
   excludedSites: string[];
   /** Sites where the extension is completely off: no checking, no overlay. */
   disabledSites: string[];
+  /** The user's own words, never flagged as spelling Errors. */
+  dictionary: string[];
 }
 
 export const DEFAULT_LANGUAGE_TOOL_URL = 'https://api.languagetool.org';
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   languageToolUrl: DEFAULT_LANGUAGE_TOOL_URL,
   excludedSites: [],
   disabledSites: [],
+  dictionary: [],
 };
 
 /** Fills in defaults for anything missing or malformed in stored settings. */
@@ -41,6 +44,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     languageToolUrl: normalizeUrl(value.languageToolUrl) ?? DEFAULT_LANGUAGE_TOOL_URL,
     excludedSites: normalizeSites(value.excludedSites),
     disabledSites: normalizeSites(value.disabledSites),
+    dictionary: normalizeDictionary(value.dictionary),
   };
 }
 
@@ -90,6 +94,23 @@ export function normalizeSite(input: string): string | undefined {
   host = host.split(/[/?#]/, 1)[0] ?? '';
   host = host.replace(/:\d*$/, '').replace(/^www\./, '').replace(/\.$/, '');
   return host && /^[a-z0-9.-]+$/.test(host) ? host : undefined;
+}
+
+/** Trimmed, non-empty words, each kept once regardless of case. */
+function normalizeDictionary(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const words = new Map<string, string>();
+  for (const entry of value) {
+    const word = typeof entry === 'string' ? entry.trim() : '';
+    if (word && !words.has(word.toLowerCase())) words.set(word.toLowerCase(), word);
+  }
+  return [...words.values()];
+}
+
+/** Whether `word` is in the dictionary, ignoring case. */
+export function isInDictionary(word: string, settings: Settings): boolean {
+  const lower = word.trim().toLowerCase();
+  return settings.dictionary.some((entry) => entry.toLowerCase() === lower);
 }
 
 function normalizeSites(value: unknown): string[] {

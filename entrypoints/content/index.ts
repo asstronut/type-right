@@ -35,8 +35,8 @@ interface FieldState {
 interface Running {
   /** Removes all trace of Type Right from the page. */
   stop(): void;
-  /** Re-reads every field's LLM health for its badge, after a Settings change. */
-  refreshLlmHealth(): void;
+  /** Re-reads every field's LLM health and Errors, after a Settings change (e.g. the dictionary). */
+  refresh(): void;
 }
 
 export default defineContentScript({
@@ -67,7 +67,11 @@ export default defineContentScript({
         });
         overlay.setLlmHealth(checker.llmHealth());
         fields.set(field, { overlay, checker });
-        hover.watch(field, overlay, listeners.signal);
+        hover.watch(field, overlay, {
+          ignore: (error) => checker.ignore(error.id),
+          // Saving notifies every tab's watcher, which re-renders all fields without the word.
+          addToDictionary: (word) => void store.addToDictionary(word),
+        }, listeners.signal);
         field.addEventListener('input', () => {
           // Render shifted/trimmed underlines on every keystroke; the debounced
           // re-check then fills in anything new.
@@ -110,8 +114,11 @@ export default defineContentScript({
             overlay.destroy();
           });
         },
-        refreshLlmHealth() {
-          fields.forEach(({ overlay, checker }) => overlay.setLlmHealth(checker.llmHealth()));
+        refresh() {
+          fields.forEach(({ overlay, checker }, field) => {
+            overlay.setLlmHealth(checker.llmHealth());
+            overlay.render(field.value, checker.errors());
+          });
         },
       };
     }
@@ -132,8 +139,9 @@ export default defineContentScript({
     store.watchSettings((next) => {
       settings = next;
       apply();
-      // Consent, the key or the site lists may have changed what the LLM badge should say.
-      running?.refreshLlmHealth();
+      // Consent, the key or the site lists may have changed what the LLM badge
+      // should say, and the dictionary which Errors to show.
+      running?.refresh();
     });
   },
 });

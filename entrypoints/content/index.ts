@@ -36,7 +36,7 @@ interface Running {
   /** Removes all trace of Type Right from the page. */
   stop(): void;
   /** Re-reads every field's LLM health and Errors, after a Settings change (e.g. the dictionary). */
-  refresh(): void;
+  refreshFields(): void;
 }
 
 export default defineContentScript({
@@ -114,7 +114,7 @@ export default defineContentScript({
             overlay.destroy();
           });
         },
-        refresh() {
+        refreshFields() {
           fields.forEach(({ overlay, checker }, field) => {
             overlay.setLlmHealth(checker.llmHealth());
             overlay.render(field.value, checker.errors());
@@ -141,7 +141,7 @@ export default defineContentScript({
       apply();
       // Consent, the key or the site lists may have changed what the LLM badge
       // should say, and the dictionary which Errors to show.
-      running?.refresh();
+      running?.refreshFields();
     });
   },
 });

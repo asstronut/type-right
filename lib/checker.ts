@@ -120,16 +120,20 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   /**
    * The field's Errors from both engines, in text order. Where both flag the
    * same words only the LLM's Error is kept, for its clearer explanation.
-   * Ignored Errors and spelling Errors on dictionary words are left out; an
+   * Spelling Errors on dictionary words are dropped before that merge, so they
+   * never hide another Error; ignored Errors are dropped after it, so an
    * ignored LLM Error takes the LanguageTool Errors it replaced with it.
    */
   function errors(): CheckError[] {
-    const unmatched = ltErrors.filter((lt) => !llmErrors.some((llm) => lt.start < llm.end && llm.start < lt.end));
     const settings = options.site?.settings();
-    return [...unmatched, ...llmErrors]
-      .filter((error) => !ignored.has(error.id))
-      .filter((error) => !(settings && error.kind === 'spelling' && isInDictionary(text.slice(error.start, error.end), settings)))
-      .sort((a, b) => a.start - b.start);
+    const withoutDictionaryWords = (list: CheckError[]) =>
+      settings
+        ? list.filter((e) => !(e.kind === 'spelling' && isInDictionary(text.slice(e.start, e.end), settings)))
+        : list;
+    const lt = withoutDictionaryWords(ltErrors);
+    const llm = withoutDictionaryWords(llmErrors);
+    const unmatched = lt.filter((l) => !llm.some((m) => l.start < m.end && m.start < l.end));
+    return [...unmatched, ...llm].filter((error) => !ignored.has(error.id)).sort((a, b) => a.start - b.start);
   }
 
   function schedule(delayMs: number): void {

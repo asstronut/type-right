@@ -476,7 +476,7 @@ describe('createFieldChecker', () => {
   });
 
   describe('ignore once', () => {
-    it('keeps an ignored Error hidden when unchanged text is re-checked', async () => {
+    it('keeps an ignored Error hidden when the paragraph around its unchanged word is re-checked', async () => {
       const field = setup();
       await field.type('I will recieve it');
       const [error] = latest;
@@ -553,6 +553,18 @@ describe('createFieldChecker', () => {
       await field.typeAndWait(sentence);
 
       expect(latest.map((e) => e.source)).toEqual(['languagetool', 'llm']);
+    });
+
+    it('keeps a LanguageTool Error that an LLM spelling Error on a dictionary word overlaps', async () => {
+      const field = setup({ hostname: 'github.com', settings: { llmConsent: true, llmApiKey: 'k', dictionary: ['apple'] } }, true);
+      const sentence = 'She ate a apple.';
+      llmReplies[sentence] = llmReply([
+        { quote: 'apple', kind: 'spelling', type: 'Spelling', explanation: 'Unknown word.', correction: 'appel' },
+      ]);
+
+      await field.typeAndWait(sentence);
+
+      expect(latest.map((e) => [e.kind, e.source])).toEqual([['grammar', 'languagetool']]);
     });
 
     it('sends the sentence to the provider with the key as a bearer token and the primary model', async () => {

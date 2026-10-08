@@ -9,7 +9,7 @@ Full v1 spec: [issue #1](https://github.com/asstronut/type-right/issues/1).
 ## How it will work (v1)
 
 - **Underlines by kind:** spelling (red), grammar (blue), unnatural wording (purple).
-- **Hover card** (~300 ms): error type, short explanation in simple English, corrected text hidden behind "Show answer". "Apply" only for spelling; grammar and wording you retype.
+- **Hover card** (~300 ms): error type, short explanation in simple English, corrected text hidden behind "Show answer". "Apply" only for spelling; grammar and wording you retype. "Ignore once" hides that Error in the field; "Add to dictionary" (spelling only) stops a word being flagged anywhere, and the Options page lists the words with Remove buttons.
 - **Two engines:**
   - [LanguageTool](https://languagetool.org) (free public API): fast spelling and grammar underlines after you pause.
   - **LLM**, your choice of provider on the Options page: **GLM** (`glm-4.7-flash`, Zhipu AI / Z.ai; the default) or **Google Gemini** (`gemini-3.8-flash`). Runs on finished sentences, catches unnatural wording, better explanations.

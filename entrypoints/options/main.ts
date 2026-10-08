@@ -153,7 +153,7 @@ llmProvider.addEventListener('change', () => {
 form.addEventListener('input', updateSave);
 
 // Another tab (or the popup, later) may change Settings while this page is open.
-// A dictionary-only change (e.g. a word added from a hover card) leaves unsaved form edits alone.
+// A dictionary-only change (e.g. a word added from a Hover card) leaves unsaved form edits alone.
 store.watchSettings((settings) => {
   renderDictionary(settings.dictionary);
   if (formSettingsDiffer(settings, savedSettings)) fill(settings);

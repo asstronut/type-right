@@ -24,6 +24,7 @@ export const store = {
     return this.saveSettings({ dictionary: [...dictionary, word] });
   },
 
+  /** Removes `word` from the personal dictionary, matching it in any case. */
   async removeFromDictionary(word: string): Promise<Settings> {
     const { dictionary } = await this.getSettings();
     return this.saveSettings({ dictionary: dictionary.filter((entry) => dictionaryKey(entry) !== dictionaryKey(word)) });

@@ -35,7 +35,7 @@ body:
       multiple: true
       options:
         - Underline (missing, wrong place, wrong colour)
-        - Hover card / Apply
+        - Hover card (Apply, Ignore here, Add to dictionary)
         - Popup
         - LLM badge or LLM check (wording)
         - LanguageTool check (spelling, grammar)

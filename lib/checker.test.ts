@@ -144,6 +144,8 @@ describe('createFieldChecker', () => {
       },
       update: checker.update,
       llmHealth: checker.llmHealth,
+      ignore: checker.ignore,
+      errors: checker.errors,
     };
   }
 
@@ -452,6 +454,50 @@ describe('createFieldChecker', () => {
     });
   });
 
+  describe('personal dictionary', () => {
+    it('produces no spelling Error for a dictionary word', async () => {
+      const field = setup({ hostname: 'github.com', settings: { dictionary: ['Recieve'] } });
+
+      await field.type('I will recieve it');
+
+      expect(latest).toEqual([]);
+    });
+
+    it('shows the Error again once the word is removed from the dictionary', async () => {
+      const settings: Partial<Settings> = { dictionary: ['recieve'] };
+      const field = setup({ hostname: 'github.com', settings });
+      await field.type('I will recieve it');
+      expect(latest).toEqual([]);
+
+      settings.dictionary = [];
+
+      expect(field.errors().map((e) => e.kind)).toEqual(['spelling']);
+    });
+  });
+
+  describe('ignore here', () => {
+    it('keeps an ignored Error hidden when the paragraph around its unchanged word is re-checked', async () => {
+      const field = setup();
+      await field.type('I will recieve it');
+      const [error] = latest;
+
+      expect(field.ignore(error!.id)).toEqual([]);
+      await field.type('I will recieve it. Thanks');
+
+      expect(sentTexts()).toEqual(['I will recieve it', 'I will recieve it. Thanks']);
+      expect(latest).toEqual([]);
+    });
+
+    it('still shows other Errors in the field', async () => {
+      const field = setup();
+      await field.type('I will recieve a apple');
+
+      field.ignore(latest.find((e) => e.kind === 'spelling')!.id);
+
+      expect(latest.map((e) => e.kind)).toEqual(['grammar']);
+    });
+  });
+
   describe.each(PROVIDERS)('LLM check ($id)', (provider) => {
     beforeEach(() => {
       llmProvider = provider.id;
@@ -507,6 +553,18 @@ describe('createFieldChecker', () => {
       await field.typeAndWait(sentence);
 
       expect(latest.map((e) => e.source)).toEqual(['languagetool', 'llm']);
+    });
+
+    it('keeps a LanguageTool Error that an LLM spelling Error on a dictionary word overlaps', async () => {
+      const field = setup({ hostname: 'github.com', settings: { llmConsent: true, llmApiKey: 'k', dictionary: ['apple'] } }, true);
+      const sentence = 'She ate a apple.';
+      llmReplies[sentence] = llmReply([
+        { quote: 'apple', kind: 'spelling', type: 'Spelling', explanation: 'Unknown word.', correction: 'appel' },
+      ]);
+
+      await field.typeAndWait(sentence);
+
+      expect(latest.map((e) => [e.kind, e.source])).toEqual([['grammar', 'languagetool']]);
     });
 
     it('sends the sentence to the provider with the key as a bearer token and the primary model', async () => {

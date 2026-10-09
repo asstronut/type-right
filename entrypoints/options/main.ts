@@ -15,6 +15,8 @@ const languageToolUrl = control<HTMLInputElement>('languageToolUrl');
 const excludedSites = control<HTMLTextAreaElement>('excludedSites');
 const disabledSites = control<HTMLTextAreaElement>('disabledSites');
 const englishVariant = control<RadioNodeList>('englishVariant');
+const dictionaryList = document.querySelector<HTMLUListElement>('#dictionary')!;
+const dictionaryEmpty = document.querySelector<HTMLParagraphElement>('#dictionaryEmpty')!;
 
 /** The snapshot of the last filled Settings. */
 let savedSnapshot = '';
@@ -65,6 +67,30 @@ function fillLlm(providerId: LlmProviderId): void {
   const provider = LLM_PROVIDERS[providerId];
   document.querySelector('#keyName')!.textContent = provider.keyName;
   document.querySelector('#recipient')!.textContent = provider.recipient;
+}
+
+/** Lists the dictionary words, each with a button that removes it right away. */
+function renderDictionary(words: string[]): void {
+  dictionaryList.replaceChildren(
+    ...[...words].sort((a, b) => a.localeCompare(b)).map((word) => {
+      const item = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = word;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove "${word}"`);
+      remove.addEventListener('click', () => void store.removeFromDictionary(word));
+      item.append(label, remove);
+      return item;
+    }),
+  );
+  dictionaryEmpty.hidden = words.length > 0;
+}
+
+/** Whether two Settings differ in anything but the dictionary, which has no form fields. */
+function formSettingsDiffer(a: Settings, b: Settings): boolean {
+  return JSON.stringify({ ...a, dictionary: [] }) !== JSON.stringify({ ...b, dictionary: [] });
 }
 
 function showError(message: string): void {
@@ -127,5 +153,11 @@ llmProvider.addEventListener('change', () => {
 form.addEventListener('input', updateSave);
 
 // Another tab (or the popup, later) may change Settings while this page is open.
-store.watchSettings(fill);
-fill(await store.getSettings());
+// A dictionary-only change (e.g. a word added from a Hover card) leaves unsaved form edits alone.
+store.watchSettings((settings) => {
+  renderDictionary(settings.dictionary);
+  if (formSettingsDiffer(settings, savedSettings)) fill(settings);
+});
+const initial = await store.getSettings();
+renderDictionary(initial.dictionary);
+fill(initial);

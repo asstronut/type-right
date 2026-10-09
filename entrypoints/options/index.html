@@ -95,6 +95,32 @@
         opacity: 0.5;
         cursor: default;
       }
+      .dictionary-section {
+        margin-top: 1.5rem;
+      }
+      .dictionary {
+        list-style: none;
+        margin: 0.5rem 0 0;
+        padding: 0;
+      }
+      .dictionary li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.3rem 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .dictionary li:last-child {
+        border-bottom: 0;
+      }
+      .dictionary button {
+        padding: 0.15rem 0.7rem;
+        font-size: 0.85rem;
+        background: transparent;
+        color: var(--bad);
+        border: 1px solid var(--border);
+      }
       #status {
         margin-left: 0.75rem;
         color: var(--bad);
@@ -151,6 +177,13 @@
 
       <button type="submit" disabled>Save</button><span id="status" role="status"></span>
     </form>
+
+    <fieldset class="dictionary-section">
+      <legend>Personal dictionary</legend>
+      <p class="hint">Words you added from the Hover card. They are never flagged as spelling mistakes. Removing one takes effect at once.</p>
+      <ul class="dictionary" id="dictionary"></ul>
+      <p class="hint" id="dictionaryEmpty">No words yet. Use "Add to dictionary" on a spelling mistake's Hover card.</p>
+    </fieldset>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

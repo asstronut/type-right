@@ -56,6 +56,20 @@ const STYLES = `
   .explanation {
     margin: 0 0 10px;
   }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 8px 0 0;
+    border-top: 1px solid #e4e4e7;
+  }
+  button.quiet {
+    border-color: transparent;
+    background: transparent;
+    color: #52525b;
+  }
+  button.quiet:hover { background: #f4f4f5; }
   .answer {
     margin: 0;
     padding: 0;
@@ -101,6 +115,9 @@ const STYLES = `
     button { border-color: #52525b; background: #27272a; color: #f4f4f5; }
     button:hover { background: #3f3f46; }
     .none { color: #a1a1aa; }
+    .actions { border-top-color: #3f3f46; }
+    button.quiet { border-color: transparent; background: transparent; color: #a1a1aa; }
+    button.quiet:hover { background: #27272a; }
   }
 `;
 
@@ -108,6 +125,10 @@ export interface HoverCardContent {
   error: CheckError;
   /** Present only when the Error can be fixed in one click. */
   onApply?: (suggestion: string) => void;
+  /** Hides this Error (every occurrence of its word, as ids are per word) in the field. */
+  onIgnore: () => void;
+  /** Present only for single-word spelling Errors: stops the word being flagged anywhere. */
+  onAddToDictionary?: () => void;
 }
 
 /**
@@ -195,7 +216,7 @@ export class HoverCard {
   }
 }
 
-function renderCard({ error, onApply }: HoverCardContent): HTMLElement {
+function renderCard({ error, onApply, onIgnore, onAddToDictionary }: HoverCardContent): HTMLElement {
   const card = el('div', 'card');
 
   const header = el('div', 'header');
@@ -206,7 +227,22 @@ function renderCard({ error, onApply }: HoverCardContent): HTMLElement {
   showAnswer.type = 'button';
   showAnswer.addEventListener('click', () => showAnswer.replaceWith(renderAnswer(error, onApply)));
   card.appendChild(showAnswer);
+
+  const actions = el('div', 'actions');
+  actions.appendChild(actionButton('Ignore here', 'Hide this mistake everywhere in this field until the page reloads', onIgnore));
+  if (onAddToDictionary) {
+    actions.appendChild(actionButton('Add to dictionary', 'Never flag this word as a spelling mistake again', onAddToDictionary));
+  }
+  card.appendChild(actions);
   return card;
+}
+
+function actionButton(label: string, title: string, onClick: () => void): HTMLButtonElement {
+  const node = el('button', 'quiet', label);
+  node.type = 'button';
+  node.title = title;
+  node.addEventListener('click', onClick);
+  return node;
 }
 
 function renderAnswer(error: CheckError, onApply: HoverCardContent['onApply']): HTMLElement {

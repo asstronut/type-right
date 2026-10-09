@@ -1,7 +1,7 @@
 import type { CheckError } from './errors';
 import { LlmFailedError, RateLimitedError, type Engine, type LlmFailure } from './engine';
 import type { LlmProviderId } from './llm-providers';
-import { isLlmAllowed, isSiteDisabled, isSiteExcluded, type Settings } from './settings';
+import { isInDictionary, isLlmAllowed, isSiteDisabled, isSiteExcluded, type Settings } from './settings';
 
 export interface CheckEngines {
   languageTool: Engine;
@@ -43,6 +43,16 @@ export interface FieldChecker {
    * away, and schedules a debounced re-check of only the edited paragraph.
    */
   update(text: string): CheckError[];
+  /**
+   * The field's current Errors, without re-checking. Call it after Settings
+   * change (e.g. the dictionary) to re-render with them applied.
+   */
+  errors(): CheckError[];
+  /**
+   * Hides the Error with this id in this field for as long as the field
+   * lives, re-checks included. Notifies and returns the remaining Errors.
+   */
+  ignore(id: string): CheckError[];
   /** The LLM health for the current Settings. */
   llmHealth(): LlmHealth;
   dispose(): void;
@@ -86,6 +96,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let llmCacheProvider: LlmProviderId | undefined;
   /** The last LLM check's failure, and the provider and key it happened with. */
   let llmFailure: { reason: LlmFailure; credentials: string } | undefined;
+  /** Ids of the Errors the user chose to ignore in this field. */
+  const ignored = new Set<string>();
 
   function update(next: string): CheckError[] {
     if (next === text) return errors();
@@ -108,10 +120,20 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   /**
    * The field's Errors from both engines, in text order. Where both flag the
    * same words only the LLM's Error is kept, for its clearer explanation.
+   * Spelling Errors on dictionary words are dropped before that merge, so they
+   * never hide another Error; ignored Errors are dropped after it, so an
+   * ignored LLM Error takes the LanguageTool Errors it replaced with it.
    */
   function errors(): CheckError[] {
-    const unmatched = ltErrors.filter((lt) => !llmErrors.some((llm) => lt.start < llm.end && llm.start < lt.end));
-    return [...unmatched, ...llmErrors].sort((a, b) => a.start - b.start);
+    const settings = options.site?.settings();
+    const withoutDictionaryWords = (list: CheckError[]) =>
+      settings
+        ? list.filter((e) => !(e.kind === 'spelling' && isInDictionary(text.slice(e.start, e.end), settings)))
+        : list;
+    const lt = withoutDictionaryWords(ltErrors);
+    const llm = withoutDictionaryWords(llmErrors);
+    const unmatched = lt.filter((l) => !llm.some((m) => l.start < m.end && m.start < l.end));
+    return [...unmatched, ...llm].filter((error) => !ignored.has(error.id)).sort((a, b) => a.start - b.start);
   }
 
   function schedule(delayMs: number): void {
@@ -244,6 +266,13 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     }
   }
 
+  function ignore(id: string): CheckError[] {
+    ignored.add(id);
+    const remaining = errors();
+    options.onChange(remaining);
+    return remaining;
+  }
+
   function llmHealth(): LlmHealth {
     const settings = options.site?.settings();
     if (settings && options.site) {
@@ -279,7 +308,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (llmTimer) clearTimeout(llmTimer);
   }
 
-  return { update, llmHealth, dispose };
+  return { update, errors, ignore, llmHealth, dispose };
 }
 
 interface Edit {

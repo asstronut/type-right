@@ -7,6 +7,12 @@ const OPEN_DELAY_MS = 300;
 /** Grace period for the pointer to travel from the underline onto the card. */
 const CLOSE_DELAY_MS = 250;
 
+/** What the Hover card's buttons do for one field. */
+export interface HoverActions {
+  ignore(error: CheckError): void;
+  addToDictionary(word: string): void;
+}
+
 interface Pending {
   error: CheckError;
   timer: ReturnType<typeof setTimeout>;
@@ -34,10 +40,10 @@ export class HoverController {
   }
 
   /** Hovers `field`'s underlines until `signal` aborts. */
-  watch(field: HTMLTextAreaElement, overlay: FieldOverlay, signal: AbortSignal): void {
+  watch(field: HTMLTextAreaElement, overlay: FieldOverlay, actions: HoverActions, signal: AbortSignal): void {
     const listen = { signal };
-    field.addEventListener('mousemove', (event) => this.onHover(field, overlay.errorAt(event.clientX, event.clientY)), listen);
-    field.addEventListener('mouseleave', () => this.onHover(field, undefined), listen);
+    field.addEventListener('mousemove', (event) => this.onHover(field, actions, overlay.errorAt(event.clientX, event.clientY)), listen);
+    field.addEventListener('mouseleave', () => this.onHover(field, actions, undefined), listen);
     // Typing (not shortcuts like Ctrl+C or bare modifiers) closes the card.
     field.addEventListener('input', () => this.close(), listen);
     field.addEventListener('keydown', (event) => {
@@ -45,7 +51,7 @@ export class HoverController {
     }, listen);
   }
 
-  private onHover(field: HTMLTextAreaElement, hit: ErrorHit | undefined): void {
+  private onHover(field: HTMLTextAreaElement, actions: HoverActions, hit: ErrorHit | undefined): void {
     if (!hit) {
       this.cancelPending();
       this.scheduleClose();
@@ -63,12 +69,12 @@ export class HoverController {
       error: hit.error,
       timer: setTimeout(() => {
         this.pending = null;
-        this.open(field, hit);
+        this.open(field, actions, hit);
       }, OPEN_DELAY_MS),
     };
   }
 
-  private open(field: HTMLTextAreaElement, { error, rect }: ErrorHit): void {
+  private open(field: HTMLTextAreaElement, actions: HoverActions, { error, rect }: ErrorHit): void {
     this.cancelClose();
     const flagged = field.value.slice(error.start, error.end);
     this.card.show(
@@ -79,6 +85,18 @@ export class HoverController {
             ? (suggestion) => {
                 this.close();
                 applySuggestion(field, error, flagged, suggestion);
+              }
+            : undefined,
+        onIgnore: () => {
+          this.close();
+          actions.ignore(error);
+        },
+        // A multi-word span (the LLM may quote one) isn't a word to learn.
+        onAddToDictionary:
+          error.kind === 'spelling' && !/\s/.test(flagged.trim())
+            ? () => {
+                this.close();
+                actions.addToDictionary(flagged);
               }
             : undefined,
       },

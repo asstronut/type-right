@@ -160,3 +160,15 @@ describe('LLM provider', () => {
     expect(mergeSettings(glmUser, { excludedSites: ['a.com'] })).toMatchObject({ llmApiKey: 'glm-key', llmConsent: true });
   });
 });
+
+describe('personal dictionary', () => {
+  it('is empty in older Settings that have none', () => {
+    expect(normalizeSettings({}).dictionary).toEqual([]);
+  });
+
+  it('drops blank, non-string and case-insensitive duplicate stored words, keeping the first spelling', () => {
+    const raw = { dictionary: [' Akbar ', 'akbar', '', 42, 'WXT'] } as unknown as Parameters<typeof normalizeSettings>[0];
+
+    expect(normalizeSettings(raw).dictionary).toEqual(['Akbar', 'WXT']);
+  });
+});

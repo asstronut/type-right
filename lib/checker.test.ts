@@ -152,6 +152,7 @@ describe('createFieldChecker', () => {
       llmHealth: checker.llmHealth,
       ignore: checker.ignore,
       errors: checker.errors,
+      forgetReported: checker.forgetReported,
     };
   }
 
@@ -560,6 +561,17 @@ describe('createFieldChecker', () => {
       await setup().type('I will recieve it.');
 
       await setup().type('I will recieve it.');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('counts an Error still in the field again after the counts are reset', async () => {
+      const field = setup();
+      await field.type('I will recieve it.');
+
+      tally = EMPTY_TALLY;
+      field.forgetReported();
+      await field.type('I will recieve it. Thanks.');
 
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
     });

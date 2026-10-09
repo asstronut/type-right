@@ -63,6 +63,11 @@ export interface FieldChecker {
   ignore(id: string): CheckError[];
   /** The LLM health for the current Settings. */
   llmHealth(): LlmHealth;
+  /**
+   * Forgets which Errors were passed to `onErrorsSeen`, after the counts are
+   * reset, so the field's next check reports them again.
+   */
+  forgetReported(): void;
   dispose(): void;
 }
 
@@ -344,7 +349,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (llmTimer) clearTimeout(llmTimer);
   }
 
-  return { update, errors, ignore, llmHealth, dispose };
+  return { update, errors, ignore, llmHealth, forgetReported: () => reported.clear(), dispose };
 }
 
 interface Edit {

@@ -37,6 +37,8 @@ interface Running {
   stop(): void;
   /** Re-reads every field's LLM health and Errors, after a Settings change (e.g. the dictionary). */
   refreshFields(): void;
+  /** Lets every field count its Errors again, after the counts are reset. */
+  forgetReported(): void;
 }
 
 export default defineContentScript({
@@ -124,6 +126,9 @@ export default defineContentScript({
             overlay.render(field.value, checker.errors());
           });
         },
+        forgetReported() {
+          fields.forEach(({ checker }) => checker.forgetReported());
+        },
       };
     }
 
@@ -146,6 +151,10 @@ export default defineContentScript({
       // Consent, the key or the site lists may have changed what the LLM badge
       // should say, and the dictionary which Errors to show.
       running?.refreshFields();
+    });
+    // Only a reset empties the tally; Errors still on screen count again on their field's next check.
+    store.watchTally((tally) => {
+      if (!tally.seen.length) running?.forgetReported();
     });
   },
 });

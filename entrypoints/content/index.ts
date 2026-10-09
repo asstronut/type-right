@@ -4,7 +4,7 @@ import { FieldOverlay } from './field-overlay';
 import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
 import { LlmFailedError, RateLimitedError, type Engine } from '../../lib/engine';
-import type { CheckMessage, CheckResponse } from '../../lib/messages';
+import type { CheckMessage, CheckResponse, TallyMessage } from '../../lib/messages';
 import { isSiteDisabled } from '../../lib/settings';
 import { store } from '../../lib/store';
 
@@ -37,6 +37,8 @@ interface Running {
   stop(): void;
   /** Re-reads every field's LLM health and Errors, after a Settings change (e.g. the dictionary). */
   refreshFields(): void;
+  /** Lets every field count its Errors again, after the counts are reset. */
+  forgetReported(): void;
 }
 
 export default defineContentScript({
@@ -64,6 +66,10 @@ export default defineContentScript({
           site,
           onChange: (errors) => overlay.render(field.value, errors),
           onLlmHealthChange: (health) => overlay.setLlmHealth(health),
+          onErrorsSeen: (sightings) => {
+            const message: TallyMessage = { type: 'record-errors', sightings };
+            void browser.runtime.sendMessage(message).catch(() => {});
+          },
         });
         overlay.setLlmHealth(checker.llmHealth());
         fields.set(field, { overlay, checker });
@@ -120,6 +126,9 @@ export default defineContentScript({
             overlay.render(field.value, checker.errors());
           });
         },
+        forgetReported() {
+          fields.forEach(({ checker }) => checker.forgetReported());
+        },
       };
     }
 
@@ -142,6 +151,10 @@ export default defineContentScript({
       // Consent, the key or the site lists may have changed what the LLM badge
       // should say, and the dictionary which Errors to show.
       running?.refreshFields();
+    });
+    // Only a reset empties the tally; Errors still on screen count again on their field's next check.
+    store.watchTally((tally) => {
+      if (!tally.seen.length) running?.forgetReported();
     });
   },
 });

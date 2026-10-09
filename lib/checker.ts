@@ -1,11 +1,12 @@
-import type { CheckError } from './errors';
+import { makeSightingKey, type CheckError } from './errors';
+import type { ErrorSighting } from './error-tally';
 import { LlmFailedError, RateLimitedError, type Engine, type LlmFailure } from './engine';
 import type { LlmProviderId } from './llm-providers';
 import { isInDictionary, isLlmAllowed, isSiteDisabled, isSiteExcluded, type Settings } from './settings';
 
 export interface CheckEngines {
   languageTool: Engine;
-  /** Checks one complete sentence at a time; without it only LanguageTool runs. */
+  /** Checks one finished sentence at a time; without it only LanguageTool runs. */
   llm?: Engine;
 }
 
@@ -32,6 +33,13 @@ export interface FieldCheckerOptions {
   onChange(errors: CheckError[]): void;
   /** Called with the LLM health whenever an LLM check changes it. */
   onLlmHealthChange?(health: LlmHealth): void;
+  /**
+   * Called with Errors this field hasn't reported before, once their sentence
+   * is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is
+   * active, the LLM has checked it too, so an Error is reported as it was
+   * finally classified.
+   */
+  onErrorsSeen?(sightings: ErrorSighting[]): void;
   debounceMs?: number;
   llmDebounceMs?: number;
 }
@@ -55,6 +63,11 @@ export interface FieldChecker {
   ignore(id: string): CheckError[];
   /** The LLM health for the current Settings. */
   llmHealth(): LlmHealth;
+  /**
+   * Forgets which Errors were passed to `onErrorsSeen`, after the counts are
+   * reset, so the field's next check reports them again.
+   */
+  forgetReported(): void;
   dispose(): void;
 }
 
@@ -98,6 +111,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let llmFailure: { reason: LlmFailure; credentials: string } | undefined;
   /** Ids of the Errors the user chose to ignore in this field. */
   const ignored = new Set<string>();
+  /** Keys of the Errors already passed to `onErrorsSeen`. */
+  const reported = new Set<string>();
 
   function update(next: string): CheckError[] {
     if (next === text) return errors();
@@ -192,7 +207,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         ...found.map((e) => shift(e, paragraph.start)),
       ];
       dirty = dirty && dirty.end > paragraph.end ? { ...dirty, start: paragraph.end } : null;
-      options.onChange(errors());
+      notify();
     }
     dirty = null;
   }
@@ -210,7 +225,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       // Consent withdrawn or the site excluded since the last check: drop what the LLM found.
       if (llmErrors.length) {
         llmErrors = [];
-        options.onChange(errors());
+        notify();
       }
       return;
     }
@@ -237,10 +252,10 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     }
   }
 
-  /** Puts each complete sentence's LLM Errors in place, asking the LLM only about uncached ones. */
+  /** Puts each finished sentence's LLM Errors in place, asking the LLM only about uncached ones. */
   async function checkSentences(llm: Engine): Promise<void> {
     const startVersion = version;
-    for (const sentence of completeSentences(text)) {
+    for (const sentence of finishedSentences(text)) {
       const sentenceText = text.slice(sentence.start, sentence.end);
       let found = llmCache.get(sentenceText);
       if (!found) {
@@ -262,15 +277,39 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         ...llmErrors.filter((e) => e.end <= sentence.start || e.start >= sentence.end),
         ...found.map((e) => shift(e, sentence.start)),
       ];
-      options.onChange(errors());
+      notify();
     }
   }
 
   function ignore(id: string): CheckError[] {
     ignored.add(id);
-    const remaining = errors();
-    options.onChange(remaining);
-    return remaining;
+    return notify();
+  }
+
+  /** Passes the field's current Errors to `onChange`, and reports any newly settled ones. */
+  function notify(): CheckError[] {
+    const current = errors();
+    options.onChange(current);
+    reportSightings(current);
+    return current;
+  }
+
+  function reportSightings(current: CheckError[]): void {
+    if (!options.onErrorsSeen) return;
+    const waitForLlm = options.engines.llm !== undefined && llmHealth().state === 'active';
+    const sightings: ErrorSighting[] = [];
+    for (const sentence of finishedSentences(text)) {
+      const sentenceText = text.slice(sentence.start, sentence.end);
+      if (waitForLlm && !llmCache.has(sentenceText)) continue;
+      for (const error of current) {
+        if (error.start < sentence.start || error.end > sentence.end) continue;
+        const key = makeSightingKey(error.kind, sentenceText, text.slice(error.start, error.end));
+        if (reported.has(key)) continue;
+        reported.add(key);
+        sightings.push({ key, kind: error.kind, type: error.type });
+      }
+    }
+    if (sightings.length) options.onErrorsSeen(sightings);
   }
 
   function llmHealth(): LlmHealth {
@@ -288,6 +327,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (reason === llmFailure?.reason) return;
     llmFailure = reason && { reason, credentials: credentials() };
     options.onLlmHealthChange?.(llmHealth());
+    // Errors held back for the LLM count now that it can't check their sentence.
+    if (reason) reportSightings(errors());
   }
 
   /** Identifies the provider and key an LLM request is sent with. */
@@ -308,7 +349,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (llmTimer) clearTimeout(llmTimer);
   }
 
-  return { update, errors, ignore, llmHealth, dispose };
+  return { update, errors, ignore, llmHealth, forgetReported: () => reported.clear(), dispose };
 }
 
 interface Edit {
@@ -390,16 +431,23 @@ const SENTENCE_END = /[.?!]/;
 const CLOSERS = /[.?!"'”’)\]]/;
 
 /**
- * The sentences ready for the LLM: those ending in `.`, `?` or `!` (plus any
- * closing quotes or brackets) followed by whitespace or the end of the text.
- * A sentence never spans a line break, so an unfinished line is skipped.
+ * The finished sentences, ready for the LLM and the error counter: those
+ * ending in `.`, `?` or `!` (plus any closing quotes or brackets) followed by
+ * whitespace or the end of the text, and the unpunctuated end of any line a
+ * line break has finished, without trailing whitespace. A sentence never spans
+ * a line break, so only the unfinished last line is skipped.
  */
-function completeSentences(text: string): Range[] {
+function finishedSentences(text: string): Range[] {
   const sentences: Range[] = [];
   let start = -1;
   for (let i = 0; i < text.length; i++) {
     const char = text[i]!;
     if (char === '\n') {
+      if (start !== -1) {
+        let end = i;
+        while (/\s/.test(text[end - 1]!)) end--;
+        sentences.push({ start, end });
+      }
       start = -1;
     } else if (start === -1) {
       if (!/\s/.test(char)) start = i;

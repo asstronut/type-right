@@ -1,4 +1,4 @@
-import { makeErrorId, type CheckError, type ErrorKind } from '../errors';
+import { ERROR_KINDS, makeErrorId, type CheckError, type ErrorKind } from '../errors';
 import { LlmFailedError, type Engine } from '../engine';
 import { LLM_PROVIDERS, type LlmProvider, type LlmProviderId } from '../llm-providers';
 
@@ -28,8 +28,6 @@ interface LlmError {
   explanation: string;
   correction: string;
 }
-
-const KINDS: readonly unknown[] = ['spelling', 'grammar', 'wording'] satisfies ErrorKind[];
 
 /** A check, fallback model included, is abandoned after this long. */
 const TIMEOUT_MS = 8_000;
@@ -121,7 +119,7 @@ function parseErrors(content: string | undefined): LlmError[] {
       e !== null &&
       typeof e.quote === 'string' &&
       e.quote.length > 0 &&
-      KINDS.includes(e.kind) &&
+      (ERROR_KINDS as readonly unknown[]).includes(e.kind) &&
       typeof e.type === 'string' &&
       typeof e.explanation === 'string' &&
       typeof e.correction === 'string',

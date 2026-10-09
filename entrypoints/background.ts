@@ -4,7 +4,7 @@ import { LlmFailedError, RateLimitedError } from '../lib/engine';
 import { createLlmEngine } from '../lib/engines/llm';
 import { createLanguageToolEngine } from '../lib/engines/language-tool';
 import type { CheckError } from '../lib/errors';
-import type { CheckMessage, CheckResponse } from '../lib/messages';
+import type { CheckMessage, CheckResponse, TallyMessage } from '../lib/messages';
 import { isLlmAllowed, languageToolConfig, type Settings } from '../lib/settings';
 import { store } from '../lib/store';
 
@@ -15,7 +15,16 @@ export default defineBackground(() => {
     await browser.tabs.create({ url: browser.runtime.getURL('/consent.html') });
   });
 
-  browser.runtime.onMessage.addListener((message: CheckMessage, sender) => {
+  /** Tally updates run one after another, so concurrent fields, tabs and the Popup never overwrite each other's counts. */
+  let tallyUpdates = Promise.resolve();
+  function queueTallyUpdate(update: () => Promise<void>): Promise<void> {
+    tallyUpdates = tallyUpdates.then(update).catch(() => {});
+    return tallyUpdates;
+  }
+
+  browser.runtime.onMessage.addListener((message: CheckMessage | TallyMessage, sender) => {
+    if (message?.type === 'record-errors') return queueTallyUpdate(() => store.recordErrors(message.sightings));
+    if (message?.type === 'reset-tally') return queueTallyUpdate(() => store.resetTally());
     if (message?.type === 'check-field') {
       return respond((settings) => createLanguageToolEngine(languageToolConfig(settings)).check(message.text));
     }

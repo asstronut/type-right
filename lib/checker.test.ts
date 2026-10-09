@@ -3,6 +3,7 @@ import { createFieldChecker, type LlmHealth } from './checker';
 import { createLanguageToolEngine } from './engines/language-tool';
 import { createLlmEngine } from './engines/llm';
 import type { CheckError } from './errors';
+import { addToTally, EMPTY_TALLY, type ErrorTally } from './error-tally';
 import type { LlmProviderId } from './llm-providers';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 
@@ -109,6 +110,8 @@ describe('createFieldChecker', () => {
   const fetchMock = vi.fn();
   let latest: CheckError[];
   let health: LlmHealth | undefined;
+  /** What the Popup would show for every field set up in the test. */
+  let tally: ErrorTally;
 
   function setup(site?: { hostname: string; settings: Partial<Settings> }, withLlm = false) {
     const languageTool = createLanguageToolEngine({
@@ -128,6 +131,9 @@ describe('createFieldChecker', () => {
       onLlmHealthChange: (next) => {
         health = next;
       },
+      onErrorsSeen: (seen) => {
+        tally = addToTally(tally, seen);
+      },
     });
     return {
       /** Type the new full text, then pause long enough for the debounced check to finish. */
@@ -146,6 +152,7 @@ describe('createFieldChecker', () => {
       llmHealth: checker.llmHealth,
       ignore: checker.ignore,
       errors: checker.errors,
+      forgetReported: checker.forgetReported,
     };
   }
 
@@ -175,6 +182,7 @@ describe('createFieldChecker', () => {
     vi.useFakeTimers();
     latest = [];
     health = undefined;
+    tally = EMPTY_TALLY;
     llmReplies = {};
     llmResponses = [];
     llmProvider = 'glm';
@@ -498,6 +506,127 @@ describe('createFieldChecker', () => {
     });
   });
 
+  describe('error counter', () => {
+    it('counts an Error once its sentence is finished', async () => {
+      const field = setup();
+
+      await field.type('I will recieve it.');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('does not count an Error while its sentence is still being typed', async () => {
+      const field = setup();
+
+      await field.type('I will recieve it');
+
+      expect(tally.counts).toEqual({});
+    });
+
+    it('counts an Error once a line break ends its sentence', async () => {
+      const field = setup();
+
+      await field.type('I will recieve it\nThanks');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('waits for the LLM to check a sentence a line break ended, then counts its Error', async () => {
+      const field = setup(undefined, true);
+      const sentence = 'She ate a apple';
+      llmReplies[sentence] = llmReply([
+        { quote: 'a apple', kind: 'grammar', type: 'Article usage', explanation: 'Use "an".', correction: 'an apple' },
+      ]);
+
+      await field.type(`${sentence}\n`);
+      expect(tally.counts).toEqual({});
+
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS);
+      expect(tally.counts).toEqual({ grammar: { 'Article usage': 1 } });
+    });
+
+    it('counts the same Error flagged again across rechecks only once', async () => {
+      const field = setup();
+      await field.type('I will recieve it.');
+
+      await field.type('I will recieve it. Thanks.');
+      await field.type('');
+      await field.type('I will recieve it.');
+
+      expect(sentTexts()).toEqual(['I will recieve it.', 'I will recieve it. Thanks.', 'I will recieve it.']);
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('counts the same Error flagged again in another field only once', async () => {
+      await setup().type('I will recieve it.');
+
+      await setup().type('I will recieve it.');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('counts an Error still in the field again after the counts are reset', async () => {
+      const field = setup();
+      await field.type('I will recieve it.');
+
+      tally = EMPTY_TALLY;
+      field.forgetReported();
+      await field.type('I will recieve it. Thanks.');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('counts two different Errors of the same type twice', async () => {
+      const field = setup();
+
+      await field.type('I will recieve it. You recieve it too.');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 2 } });
+    });
+
+    it('does not count an Error the user ignored before its sentence was finished', async () => {
+      const field = setup();
+      await field.type('I will recieve it');
+
+      field.ignore(latest[0]!.id);
+      await field.type('I will recieve it.');
+
+      expect(tally.counts).toEqual({});
+    });
+
+    it('waits for the LLM, then counts a merged Error once, as the LLM classified it', async () => {
+      const field = setup(undefined, true);
+      const sentence = 'She ate a apple.';
+      llmReplies[sentence] = llmReply([
+        { quote: 'a apple', kind: 'grammar', type: 'Article usage', explanation: 'Use "an".', correction: 'an apple' },
+      ]);
+
+      await field.type(sentence);
+      expect(tally.counts).toEqual({});
+
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS);
+      expect(tally.counts).toEqual({ grammar: { 'Article usage': 1 } });
+    });
+
+    it('counts the LanguageTool Errors it waited on once the LLM fails', async () => {
+      const field = setup(undefined, true);
+      llmResponses.push(() => new Response('nope', { status: 500 }));
+
+      await field.typeAndWait('I will recieve it.');
+
+      expect(health).toMatchObject({ state: 'failing' });
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('counts LanguageTool Errors without waiting when the LLM is not allowed', async () => {
+      const field = setup({ hostname: 'github.com', settings: { llmConsent: false } }, true);
+
+      await field.type('I will recieve it.');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+  });
+
   describe.each(PROVIDERS)('LLM check ($id)', (provider) => {
     beforeEach(() => {
       llmProvider = provider.id;
@@ -517,6 +646,14 @@ describe('createFieldChecker', () => {
       await field.typeAndWait('I am agree with you.');
 
       expect(llmSent()).toEqual(['I am agree with you.']);
+    });
+
+    it('sends a sentence a line break ended, without its trailing spaces', async () => {
+      const field = setup(undefined, true);
+
+      await field.typeAndWait('Hi John,  \nI am agree with you');
+
+      expect(llmSent()).toEqual(['Hi John,']);
     });
 
     it('serves an unchanged sentence from the cache', async () => {

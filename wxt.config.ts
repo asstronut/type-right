@@ -6,7 +6,7 @@ export default defineConfig({
   manifest: {
     name: 'Type Right',
     description: 'As-you-type English error checker',
-    permissions: ['storage'],
+    permissions: ['storage', 'activeTab'],
     host_permissions: [
       'https://api.languagetool.org/*',
       'https://api.z.ai/*',

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Type Right</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1f2328;
+        --muted: #59636e;
+        --border: #d1d9e0;
+        --bg: #ffffff;
+        --accent: #0969da;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e6edf3;
+          --muted: #9198a1;
+          --border: #3d444d;
+          --bg: #0d1117;
+          --accent: #4493f8;
+        }
+      }
+      body {
+        font: 14px/1.45 system-ui, sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+        width: 300px;
+        margin: 0;
+        padding: 0.75rem 1rem 1rem;
+      }
+      h1 {
+        font-size: 1.1rem;
+        margin: 0 0 0.5rem;
+      }
+      h2 {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin: 0.75rem 0 0.25rem;
+      }
+      #counts h2 {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.2rem 0;
+        border-bottom: 1px solid var(--border);
+      }
+      li:last-child {
+        border-bottom: 0;
+      }
+      .count {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin: 0.25rem 0 0;
+      }
+      section {
+        border-top: 1px solid var(--border);
+        margin-top: 0.9rem;
+        padding-top: 0.6rem;
+      }
+      button {
+        display: block;
+        width: 100%;
+        font: inherit;
+        margin-top: 0.4rem;
+        padding: 0.4rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--fg);
+        cursor: pointer;
+        text-align: left;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Your weak spots</h1>
+    <div id="counts"></div>
+    <p class="hint" id="countsEmpty">No mistakes counted yet. Each one is counted once, when you finish its sentence or line.</p>
+    <button type="button" id="reset">Reset counters</button>
+
+    <section>
+      <h2 id="site">This site</h2>
+      <button type="button" id="exclude">Exclude this site from LLM</button>
+      <button type="button" id="disable">Turn off on this site</button>
+      <p class="hint" id="siteHint"></p>
+      <p class="hint"><a href="#" id="options">Manage sites on the Options page</a></p>
+    </section>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -15,13 +15,22 @@ const siteHint = document.querySelector<HTMLParagraphElement>('#siteHint')!;
 
 const KIND_LABELS: Record<ErrorKind, string> = { spelling: 'Spelling', grammar: 'Grammar', wording: 'Wording' };
 
-/** Each kind's type labels with their counts, most frequent first. */
+/** Each kind with its total, then its type labels with their counts; kinds and types most frequent first. */
 function renderTally(tally: ErrorTally): void {
-  const sections = ERROR_KINDS.flatMap((kind) => {
+  const kinds = ERROR_KINDS.map((kind) => {
     const byType = Object.entries(tally.counts[kind] ?? {}).sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
-    if (!byType.length) return [];
+    return { kind, byType, total: byType.reduce((sum, [, n]) => sum + n, 0) };
+  })
+    .filter(({ total }) => total > 0)
+    .sort((a, b) => b.total - a.total);
+  const sections = kinds.flatMap(({ kind, byType, total }) => {
     const heading = document.createElement('h2');
-    heading.textContent = KIND_LABELS[kind];
+    const label = document.createElement('span');
+    label.textContent = KIND_LABELS[kind];
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = String(total);
+    heading.append(label, count);
     const list = document.createElement('ul');
     list.append(
       ...byType.map(([type, n]) => {

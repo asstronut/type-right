@@ -4,7 +4,7 @@ import { FieldOverlay } from './field-overlay';
 import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
 import { LlmFailedError, RateLimitedError, type Engine } from '../../lib/engine';
-import type { CheckMessage, CheckResponse } from '../../lib/messages';
+import type { CheckMessage, CheckResponse, TallyMessage } from '../../lib/messages';
 import { isSiteDisabled } from '../../lib/settings';
 import { store } from '../../lib/store';
 
@@ -64,6 +64,10 @@ export default defineContentScript({
           site,
           onChange: (errors) => overlay.render(field.value, errors),
           onLlmHealthChange: (health) => overlay.setLlmHealth(health),
+          onErrorsSeen: (sightings) => {
+            const message: TallyMessage = { type: 'record-errors', sightings };
+            void browser.runtime.sendMessage(message).catch(() => {});
+          },
         });
         overlay.setLlmHealth(checker.llmHealth());
         fields.set(field, { overlay, checker });

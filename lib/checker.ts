@@ -1,4 +1,5 @@
-import type { CheckError } from './errors';
+import { makeSightingKey, type CheckError } from './errors';
+import type { ErrorSighting } from './error-tally';
 import { LlmFailedError, RateLimitedError, type Engine, type LlmFailure } from './engine';
 import type { LlmProviderId } from './llm-providers';
 import { isInDictionary, isLlmAllowed, isSiteDisabled, isSiteExcluded, type Settings } from './settings';
@@ -32,6 +33,12 @@ export interface FieldCheckerOptions {
   onChange(errors: CheckError[]): void;
   /** Called with the LLM health whenever an LLM check changes it. */
   onLlmHealthChange?(health: LlmHealth): void;
+  /**
+   * Called with Errors this field hasn't reported before, once their sentence
+   * is finished (ends in `.`, `?` or `!`) and, while the LLM is active, the
+   * LLM has checked it too, so an Error is reported as it was finally classified.
+   */
+  onErrorsSeen?(sightings: ErrorSighting[]): void;
   debounceMs?: number;
   llmDebounceMs?: number;
 }
@@ -98,6 +105,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let llmFailure: { reason: LlmFailure; credentials: string } | undefined;
   /** Ids of the Errors the user chose to ignore in this field. */
   const ignored = new Set<string>();
+  /** Keys of the Errors already passed to `onErrorsSeen`. */
+  const reported = new Set<string>();
 
   function update(next: string): CheckError[] {
     if (next === text) return errors();
@@ -192,7 +201,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         ...found.map((e) => shift(e, paragraph.start)),
       ];
       dirty = dirty && dirty.end > paragraph.end ? { ...dirty, start: paragraph.end } : null;
-      options.onChange(errors());
+      notify();
     }
     dirty = null;
   }
@@ -210,7 +219,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       // Consent withdrawn or the site excluded since the last check: drop what the LLM found.
       if (llmErrors.length) {
         llmErrors = [];
-        options.onChange(errors());
+        notify();
       }
       return;
     }
@@ -262,15 +271,39 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         ...llmErrors.filter((e) => e.end <= sentence.start || e.start >= sentence.end),
         ...found.map((e) => shift(e, sentence.start)),
       ];
-      options.onChange(errors());
+      notify();
     }
   }
 
   function ignore(id: string): CheckError[] {
     ignored.add(id);
-    const remaining = errors();
-    options.onChange(remaining);
-    return remaining;
+    return notify();
+  }
+
+  /** Passes the field's current Errors to `onChange`, and reports any newly settled ones. */
+  function notify(): CheckError[] {
+    const current = errors();
+    options.onChange(current);
+    reportSightings(current);
+    return current;
+  }
+
+  function reportSightings(current: CheckError[]): void {
+    if (!options.onErrorsSeen) return;
+    const waitForLlm = options.engines.llm !== undefined && llmHealth().state === 'active';
+    const sightings: ErrorSighting[] = [];
+    for (const sentence of completeSentences(text)) {
+      const sentenceText = text.slice(sentence.start, sentence.end);
+      if (waitForLlm && !llmCache.has(sentenceText)) continue;
+      for (const error of current) {
+        if (error.start < sentence.start || error.end > sentence.end) continue;
+        const key = makeSightingKey(error.kind, sentenceText, text.slice(error.start, error.end));
+        if (reported.has(key)) continue;
+        reported.add(key);
+        sightings.push({ key, kind: error.kind, type: error.type });
+      }
+    }
+    if (sightings.length) options.onErrorsSeen(sightings);
   }
 
   function llmHealth(): LlmHealth {
@@ -288,6 +321,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (reason === llmFailure?.reason) return;
     llmFailure = reason && { reason, credentials: credentials() };
     options.onLlmHealthChange?.(llmHealth());
+    // Errors held back for the LLM count now that it can't check their sentence.
+    if (reason) reportSightings(errors());
   }
 
   /** Identifies the provider and key an LLM request is sent with. */

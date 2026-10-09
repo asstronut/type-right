@@ -63,8 +63,9 @@ The LLM leg goes to whichever provider is selected in Settings; both take the sa
 Network calls run in the background service worker so API keys never reach page scripts and page CSP doesn't matter.
 
 - `entrypoints/content/`: attaches to textareas, renders underline overlays ([field-overlay.ts](entrypoints/content/field-overlay.ts)).
-- `entrypoints/background.ts`: receives text via message, calls the engine with the current Settings (English variant, LanguageTool URL, LLM provider and key).
+- `entrypoints/background.ts`: receives text via message, calls the engine with the current Settings (English variant, LanguageTool URL, LLM provider and key). Also applies `record-errors` / `reset-tally` messages to the Popup's counts one at a time.
 - `entrypoints/options/`: Options page (right-click the extension icon → Options). Switching LLM provider clears the key and reopens the Consent page.
+- `entrypoints/popup/`: toolbar Popup: Error counts by kind and type label, a reset button, and "Exclude this site from LLM" / "Turn off on this site" buttons for the current tab (read via the `activeTab` permission).
 - `entrypoints/consent/`: Consent page, opened on install and on provider change; names the selected provider; no LLM calls until the user accepts.
 - `lib/settings.ts`, `lib/store.ts`: `Settings` shape, defaults, site-list matching, provider-change rules (consent revoked, key dropped), and the typed Store over `chrome.storage.local`. Tested in [settings.test.ts](lib/settings.test.ts).
 - `lib/checker.ts`: per-field checker core: edit diffing, offset mapping, paragraph scoping, debounce, rate-limit retry, LLM sentence scheduling (complete sentences only, ~1.5 s pause, cached by sentence text, cache dropped when the LLM provider changes) and merging of overlapping LanguageTool/LLM Errors. Tested in [checker.test.ts](lib/checker.test.ts).
@@ -72,7 +73,8 @@ Network calls run in the background service worker so API keys never reach page 
 - `lib/llm-providers.ts`: one description per LLM provider: endpoint, models, extra request fields, overload detection, disclosure text.
   - GLM: `glm-4.7-flash`, falls back to `glm-4.5-flash` on HTTP 429 with code `1305`; sends `thinking: disabled`.
   - Gemini: `gemini-3.8-flash`, falls back to `gemini-3.5-flash-lite` on HTTP 503; HTTP 429 is a rate limit; sends `reasoning_effort: low`.
-- `lib/errors.ts`: `CheckError` shape and stable error ids (derived from kind + flagged text, not position, so re-flagging the same mistake yields the same id).
+- `lib/errors.ts`: `CheckError` shape and stable error ids (derived from kind + flagged text, not position, so re-flagging the same mistake yields the same id), plus the Popup's counting key (kind + sentence text + flagged text).
+- `lib/error-tally.ts`: the Popup's counts, stored in `chrome.storage.local`. The checker reports each Error once its sentence is finished (ends in `.`, `?` or `!`) and, while the LLM is active, after the LLM has checked it; each distinct key is counted once. Tested in [checker.test.ts](lib/checker.test.ts).
 
 ## Privacy
 

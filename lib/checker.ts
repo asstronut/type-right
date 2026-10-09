@@ -35,8 +35,9 @@ export interface FieldCheckerOptions {
   onLlmHealthChange?(health: LlmHealth): void;
   /**
    * Called with Errors this field hasn't reported before, once their sentence
-   * is finished (ends in `.`, `?` or `!`) and, while the LLM is active, the
-   * LLM has checked it too, so an Error is reported as it was finally classified.
+   * is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is
+   * active, the LLM has checked it too (if it is a complete sentence the LLM
+   * sees), so an Error is reported as it was finally classified.
    */
   onErrorsSeen?(sightings: ErrorSighting[]): void;
   debounceMs?: number;
@@ -292,9 +293,15 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (!options.onErrorsSeen) return;
     const waitForLlm = options.engines.llm !== undefined && llmHealth().state === 'active';
     const sightings: ErrorSighting[] = [];
-    for (const sentence of completeSentences(text)) {
+    const complete = completeSentences(text);
+    const finished = [
+      ...complete.map((sentence) => ({ ...sentence, llmChecks: true })),
+      ...lineEndedSentences(text, complete).map((sentence) => ({ ...sentence, llmChecks: false })),
+    ];
+    for (const sentence of finished) {
       const sentenceText = text.slice(sentence.start, sentence.end);
-      if (waitForLlm && !llmCache.has(sentenceText)) continue;
+      // The LLM only sees complete sentences, so a line-ended one never waits for it.
+      if (waitForLlm && sentence.llmChecks && !llmCache.has(sentenceText)) continue;
       for (const error of current) {
         if (error.start < sentence.start || error.end > sentence.end) continue;
         const key = makeSightingKey(error.kind, sentenceText, text.slice(error.start, error.end));
@@ -446,6 +453,27 @@ function completeSentences(text: string): Range[] {
     sentences.push({ start, end });
     start = -1;
     i = end - 1;
+  }
+  return sentences;
+}
+
+/**
+ * The unpunctuated ends of lines that a line break has finished: what follows
+ * a line's last complete sentence (or the whole line), trimmed, if not blank.
+ */
+function lineEndedSentences(text: string, complete: Range[]): Range[] {
+  const sentences: Range[] = [];
+  let lineStart = 0;
+  for (let lineEnd = text.indexOf('\n'); lineEnd !== -1; lineEnd = text.indexOf('\n', lineStart)) {
+    let start = lineStart;
+    for (const sentence of complete) {
+      if (sentence.start >= lineStart && sentence.end <= lineEnd) start = Math.max(start, sentence.end);
+    }
+    let end = lineEnd;
+    while (start < end && /\s/.test(text[start]!)) start++;
+    while (end > start && /\s/.test(text[end - 1]!)) end--;
+    if (start < end) sentences.push({ start, end });
+    lineStart = lineEnd + 1;
   }
   return sentences;
 }

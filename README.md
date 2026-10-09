@@ -74,7 +74,7 @@ Network calls run in the background service worker so API keys never reach page 
   - GLM: `glm-4.7-flash`, falls back to `glm-4.5-flash` on HTTP 429 with code `1305`; sends `thinking: disabled`.
   - Gemini: `gemini-3.8-flash`, falls back to `gemini-3.5-flash-lite` on HTTP 503; HTTP 429 is a rate limit; sends `reasoning_effort: low`.
 - `lib/errors.ts`: `CheckError` shape and stable error ids (derived from kind + flagged text, not position, so re-flagging the same mistake yields the same id), plus the Popup's counting key (kind + sentence text + flagged text).
-- `lib/error-tally.ts`: the Popup's counts, stored in `chrome.storage.local`. The checker reports each Error once its sentence is finished (ends in `.`, `?` or `!`) and, while the LLM is active, after the LLM has checked it; each distinct key is counted once. Tested in [checker.test.ts](lib/checker.test.ts).
+- `lib/error-tally.ts`: the Popup's counts, stored in `chrome.storage.local`. The checker reports each Error once its sentence is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is active, after the LLM has checked it (line-ended sentences, which the LLM never sees, do not wait); each distinct key is counted once. Tested in [checker.test.ts](lib/checker.test.ts).
 
 ## Privacy
 

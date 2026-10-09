@@ -522,6 +522,23 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({});
     });
 
+    it('counts an Error once a line break ends its sentence', async () => {
+      const field = setup();
+
+      await field.type('I will recieve it\nThanks');
+
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('counts an Error in a line ended by a line break without waiting for the LLM, which never sees it', async () => {
+      const field = setup(undefined, true);
+
+      await field.typeAndWait('I will recieve it\n');
+
+      expect(llmSent()).toEqual([]);
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
     it('counts the same Error flagged again across rechecks only once', async () => {
       const field = setup();
       await field.type('I will recieve it.');

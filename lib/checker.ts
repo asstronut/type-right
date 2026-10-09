@@ -6,7 +6,7 @@ import { isInDictionary, isLlmAllowed, isSiteDisabled, isSiteExcluded, type Sett
 
 export interface CheckEngines {
   languageTool: Engine;
-  /** Checks one complete sentence at a time; without it only LanguageTool runs. */
+  /** Checks one finished sentence at a time; without it only LanguageTool runs. */
   llm?: Engine;
 }
 
@@ -36,8 +36,8 @@ export interface FieldCheckerOptions {
   /**
    * Called with Errors this field hasn't reported before, once their sentence
    * is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is
-   * active, the LLM has checked it too (if it is a complete sentence the LLM
-   * sees), so an Error is reported as it was finally classified.
+   * active, the LLM has checked it too, so an Error is reported as it was
+   * finally classified.
    */
   onErrorsSeen?(sightings: ErrorSighting[]): void;
   debounceMs?: number;
@@ -247,10 +247,10 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     }
   }
 
-  /** Puts each complete sentence's LLM Errors in place, asking the LLM only about uncached ones. */
+  /** Puts each finished sentence's LLM Errors in place, asking the LLM only about uncached ones. */
   async function checkSentences(llm: Engine): Promise<void> {
     const startVersion = version;
-    for (const sentence of completeSentences(text)) {
+    for (const sentence of finishedSentences(text)) {
       const sentenceText = text.slice(sentence.start, sentence.end);
       let found = llmCache.get(sentenceText);
       if (!found) {
@@ -293,15 +293,9 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (!options.onErrorsSeen) return;
     const waitForLlm = options.engines.llm !== undefined && llmHealth().state === 'active';
     const sightings: ErrorSighting[] = [];
-    const complete = completeSentences(text);
-    const finished = [
-      ...complete.map((sentence) => ({ ...sentence, llmChecks: true })),
-      ...lineEndedSentences(text, complete).map((sentence) => ({ ...sentence, llmChecks: false })),
-    ];
-    for (const sentence of finished) {
+    for (const sentence of finishedSentences(text)) {
       const sentenceText = text.slice(sentence.start, sentence.end);
-      // The LLM only sees complete sentences, so a line-ended one never waits for it.
-      if (waitForLlm && sentence.llmChecks && !llmCache.has(sentenceText)) continue;
+      if (waitForLlm && !llmCache.has(sentenceText)) continue;
       for (const error of current) {
         if (error.start < sentence.start || error.end > sentence.end) continue;
         const key = makeSightingKey(error.kind, sentenceText, text.slice(error.start, error.end));
@@ -432,16 +426,23 @@ const SENTENCE_END = /[.?!]/;
 const CLOSERS = /[.?!"'”’)\]]/;
 
 /**
- * The sentences ready for the LLM: those ending in `.`, `?` or `!` (plus any
- * closing quotes or brackets) followed by whitespace or the end of the text.
- * A sentence never spans a line break, so an unfinished line is skipped.
+ * The finished sentences, ready for the LLM and the error counter: those
+ * ending in `.`, `?` or `!` (plus any closing quotes or brackets) followed by
+ * whitespace or the end of the text, and the unpunctuated end of any line a
+ * line break has finished, without trailing whitespace. A sentence never spans
+ * a line break, so only the unfinished last line is skipped.
  */
-function completeSentences(text: string): Range[] {
+function finishedSentences(text: string): Range[] {
   const sentences: Range[] = [];
   let start = -1;
   for (let i = 0; i < text.length; i++) {
     const char = text[i]!;
     if (char === '\n') {
+      if (start !== -1) {
+        let end = i;
+        while (/\s/.test(text[end - 1]!)) end--;
+        sentences.push({ start, end });
+      }
       start = -1;
     } else if (start === -1) {
       if (!/\s/.test(char)) start = i;
@@ -453,27 +454,6 @@ function completeSentences(text: string): Range[] {
     sentences.push({ start, end });
     start = -1;
     i = end - 1;
-  }
-  return sentences;
-}
-
-/**
- * The unpunctuated ends of lines that a line break has finished: what follows
- * a line's last complete sentence (or the whole line), trimmed, if not blank.
- */
-function lineEndedSentences(text: string, complete: Range[]): Range[] {
-  const sentences: Range[] = [];
-  let lineStart = 0;
-  for (let lineEnd = text.indexOf('\n'); lineEnd !== -1; lineEnd = text.indexOf('\n', lineStart)) {
-    let start = lineStart;
-    for (const sentence of complete) {
-      if (sentence.start >= lineStart && sentence.end <= lineEnd) start = Math.max(start, sentence.end);
-    }
-    let end = lineEnd;
-    while (start < end && /\s/.test(text[start]!)) start++;
-    while (end > start && /\s/.test(text[end - 1]!)) end--;
-    if (start < end) sentences.push({ start, end });
-    lineStart = lineEnd + 1;
   }
   return sentences;
 }

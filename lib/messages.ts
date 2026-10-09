@@ -2,7 +2,7 @@ import type { LlmFailure } from './engine';
 import type { CheckError } from './errors';
 import type { ErrorSighting } from './error-tally';
 
-/** Asks the background worker to run an engine: LanguageTool on a paragraph, or the LLM on one complete sentence. */
+/** Asks the background worker to run an engine: LanguageTool on a paragraph, or the LLM on one finished sentence. */
 export interface CheckMessage {
   type: 'check-field' | 'check-sentence';
   text: string;

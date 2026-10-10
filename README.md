@@ -1,6 +1,6 @@
 # Type Right
 
-Personal Chrome extension that checks your English as you type, in any `<textarea>`, with no "check" button. It underlines each error in place, colored by kind. The goal is to **learn**, not to be auto-corrected: for each error you'll see what kind it is and why it's wrong, and you fix it yourself.
+Personal Chrome extension that checks your English as you type, in any `<textarea>`, with no "check" button. It underlines each slip (a spelling, grammar or wording mistake; see [GLOSSARY.md](GLOSSARY.md)) in place, colored by kind. The goal is to **learn**, not to be auto-corrected: for each one you'll see what kind it is and why it's wrong, and you fix it yourself.
 
 Full v1 spec: [issue #1](https://github.com/asstronut/type-right/issues/1).
 
@@ -9,12 +9,12 @@ Full v1 spec: [issue #1](https://github.com/asstronut/type-right/issues/1).
 ## How it will work (v1)
 
 - **Underlines by kind:** spelling (red), grammar (blue), unnatural wording (purple).
-- **Hover card** (~300 ms): error type, short explanation in simple English, corrected text hidden behind "Show answer". "Apply" only for spelling; grammar and wording you retype. "Ignore here" hides that mistake everywhere in the field until the page reloads; "Add to dictionary" (spelling only) stops a word being flagged anywhere, and the Options page lists the words with Remove buttons.
+- **Hover card** (~300 ms): the Slip's type, short explanation in simple English, corrected text hidden behind "Show answer". "Apply" only for spelling; grammar and wording you retype. "Ignore here" hides that Slip everywhere in the field until the page reloads; "Add to dictionary" (spelling only) stops a word being flagged anywhere, and the Options page lists the words with Remove buttons.
 - **Two engines:**
   - [LanguageTool](https://languagetool.org) (free public API): fast spelling and grammar underlines after you pause.
   - **LLM**, your choice of provider on the Options page: **GLM** (`glm-4.7-flash`, Zhipu AI / Z.ai; the default) or **Google Gemini** (`gemini-3.8-flash`). Runs on finished sentences, catches unnatural wording, better explanations.
 - **Privacy controls:** consent at install before any LLM call (asked again whenever you switch provider), an "LLM" badge on every field sent to the LLM, per-site exclusion list (LanguageTool only on those sites).
-- **Extras:** ignore here, personal dictionary, popup with error counts per type, US/UK English, configurable LanguageTool URL.
+- **Extras:** ignore here, personal dictionary, popup with Slip counts per type, US/UK English, configurable LanguageTool URL.
 
 ## Quick start
 
@@ -54,7 +54,7 @@ For development with hot reload, run `npm run dev`.
 
 ```
 content script ──check-field msg────▶ background worker ──POST /v2/check──────────▶ LanguageTool
- (textarea + overlay + checker) ─check-sentence msg─▶ (Engine → CheckError[]) ──POST chat/completions──▶ GLM (Z.ai)
+ (textarea + overlay + checker) ─check-sentence msg─▶ (Engine → Slip[])      ──POST chat/completions──▶ GLM (Z.ai)
                                                                                                          or Gemini (Google)
 ```
 
@@ -63,18 +63,18 @@ The LLM leg goes to whichever provider is selected in Settings; both take the sa
 Network calls run in the background service worker so API keys never reach page scripts and page CSP doesn't matter.
 
 - `entrypoints/content/`: attaches to textareas, renders underline overlays ([field-overlay.ts](entrypoints/content/field-overlay.ts)).
-- `entrypoints/background.ts`: receives text via message, calls the engine with the current Settings (English variant, LanguageTool URL, LLM provider and key). Also applies `record-errors` / `reset-tally` messages to the Popup's counts one at a time.
+- `entrypoints/background.ts`: receives text via message, calls the engine with the current Settings (English variant, LanguageTool URL, LLM provider and key). Also applies `record-slips` / `reset-tally` messages to the Popup's counts one at a time.
 - `entrypoints/options/`: Options page (right-click the extension icon → Options). Switching LLM provider clears the key and reopens the Consent page.
-- `entrypoints/popup/`: toolbar Popup: Error counts per kind (with its total) and type label, most frequent first, a reset button, and "Exclude this site from LLM" / "Turn off on this site" buttons for the current tab (read via the `activeTab` permission).
+- `entrypoints/popup/`: toolbar Popup: Slip counts per kind (with its total) and type label, most frequent first, a reset button, and "Exclude this site from LLM" / "Turn off on this site" buttons for the current tab (read via the `activeTab` permission).
 - `entrypoints/consent/`: Consent page, opened on install and on provider change; names the selected provider; no LLM calls until the user accepts.
 - `lib/settings.ts`, `lib/store.ts`: `Settings` shape, defaults, site-list matching, provider-change rules (consent revoked, key dropped), and the typed Store over `chrome.storage.local`. Tested in [settings.test.ts](lib/settings.test.ts).
-- `lib/checker.ts`: per-field checker core: edit diffing, offset mapping, paragraph scoping, debounce, rate-limit retry, LLM sentence scheduling (finished sentences only: ending in `.`, `?`, `!` or a line break, ~1.5 s pause, cached by sentence text, cache dropped when the LLM provider changes) and merging of overlapping LanguageTool/LLM Errors. Tested in [checker.test.ts](lib/checker.test.ts).
+- `lib/checker.ts`: per-field checker core: edit diffing, offset mapping, paragraph scoping, debounce, rate-limit retry, LLM sentence scheduling (finished sentences only: ending in `.`, `?`, `!` or a line break, ~1.5 s pause, cached by sentence text, cache dropped when the LLM provider changes) and merging of overlapping LanguageTool/LLM Slips. Tested in [checker.test.ts](lib/checker.test.ts).
 - `lib/engine.ts`, `lib/engines/language-tool.ts`, `lib/engines/llm.ts`: `Engine` interface, the LanguageTool adapter, and the shared LLM adapter (prompt, JSON reply parsing, locating quoted spans, one retry on the fallback model when the primary is overloaded; a plain rate limit backs off instead).
 - `lib/llm-providers.ts`: one description per LLM provider: endpoint, models, extra request fields, overload detection, disclosure text.
   - GLM: `glm-4.7-flash`, falls back to `glm-4.5-flash` on HTTP 429 with code `1305`; sends `thinking: disabled`.
   - Gemini: `gemini-3.8-flash`, falls back to `gemini-3.5-flash-lite` on HTTP 503; HTTP 429 is a rate limit; sends `reasoning_effort: low`.
-- `lib/errors.ts`: `CheckError` shape and stable error ids (derived from kind + flagged text, not position, so re-flagging the same mistake yields the same id), plus the Popup's counting key (kind + sentence text + flagged text).
-- `lib/error-tally.ts`: the Popup's counts, stored in `chrome.storage.local`. The checker reports each Error once its sentence is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is active, after the LLM has checked it; each distinct key is counted once. Tested in [checker.test.ts](lib/checker.test.ts) and [error-tally.test.ts](lib/error-tally.test.ts).
+- `lib/slips.ts`: `Slip` shape and stable Slip ids (derived from kind + flagged text, not position, so re-flagging the same Slip yields the same id), plus the Popup's counting key (kind + sentence text + flagged text).
+- `lib/slip-tally.ts`: the Popup's counts, stored in `chrome.storage.local`. The checker reports each Slip once its sentence is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is active, after the LLM has checked it; each distinct key is counted once. Tested in [checker.test.ts](lib/checker.test.ts) and [slip-tally.test.ts](lib/slip-tally.test.ts).
 
 ## Privacy
 

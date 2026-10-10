@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFieldChecker, type LlmHealth } from './checker';
 import { createLanguageToolEngine } from './engines/language-tool';
 import { createLlmEngine } from './engines/llm';
-import type { CheckError } from './errors';
-import { addToTally, EMPTY_TALLY, type ErrorTally } from './error-tally';
+import type { Slip } from './slips';
+import { addToTally, EMPTY_TALLY, type SlipTally } from './slip-tally';
 import type { LlmProviderId } from './llm-providers';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 
@@ -35,7 +35,7 @@ function languageToolMatches(text: string) {
   return matches;
 }
 
-interface LlmMistake {
+interface LlmSlip {
   quote: string;
   kind: string;
   type: string;
@@ -84,13 +84,13 @@ const LLM_URLS: string[] = PROVIDERS.map((p) => p.url);
 
 /** The provider the field's LLM engine talks to. */
 let llmProvider: LlmProviderId;
-/** Canned LLM replies, by the exact sentence sent; any other sentence gets no errors. */
+/** Canned LLM replies, by the exact sentence sent; any other sentence gets no Slips. */
 let llmReplies: Record<string, string>;
 /** Raw LLM responses to return (or throw), in order, before falling back to `llmReplies`. */
 let llmResponses: ((init: { signal?: AbortSignal }) => Response | Promise<Response>)[];
 
-function llmReply(errors: LlmMistake[]): string {
-  return JSON.stringify({ errors });
+function llmReply(slips: LlmSlip[]): string {
+  return JSON.stringify({ errors: slips });
 }
 
 function chatCompletion(content: string): Response {
@@ -108,10 +108,10 @@ function llmSentence(init: { body: string }): string {
 
 describe('createFieldChecker', () => {
   const fetchMock = vi.fn();
-  let latest: CheckError[];
+  let latest: Slip[];
   let health: LlmHealth | undefined;
   /** What the Popup would show for every field set up in the test. */
-  let tally: ErrorTally;
+  let tally: SlipTally;
 
   function setup(site?: { hostname: string; settings: Partial<Settings> }, withLlm = false) {
     const languageTool = createLanguageToolEngine({
@@ -125,13 +125,13 @@ describe('createFieldChecker', () => {
         hostname: site.hostname,
         settings: () => ({ ...DEFAULT_SETTINGS, llmProvider, ...site.settings }),
       },
-      onChange: (errors) => {
-        latest = errors;
+      onChange: (slips) => {
+        latest = slips;
       },
       onLlmHealthChange: (next) => {
         health = next;
       },
-      onErrorsSeen: (seen) => {
+      onSlipsSeen: (seen) => {
         tally = addToTally(tally, seen);
       },
     });
@@ -151,7 +151,7 @@ describe('createFieldChecker', () => {
       update: checker.update,
       llmHealth: checker.llmHealth,
       ignore: checker.ignore,
-      errors: checker.errors,
+      slips: checker.slips,
       forgetReported: checker.forgetReported,
     };
   }
@@ -204,7 +204,7 @@ describe('createFieldChecker', () => {
     fetchMock.mockReset();
   });
 
-  it('returns no errors for blank text without calling the engine', async () => {
+  it('returns no Slips for blank text without calling the engine', async () => {
     const field = setup();
 
     await field.type('   ');
@@ -213,7 +213,7 @@ describe('createFieldChecker', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('produces a spelling Error with correct offsets from a canned LT response', async () => {
+  it('produces a spelling Slip with correct offsets from a canned LT response', async () => {
     const field = setup();
     const text = 'I will recieve it';
     const start = text.indexOf('recieve');
@@ -244,7 +244,7 @@ describe('createFieldChecker', () => {
   });
 
   describe('while the user keeps typing', () => {
-    it('shifts an Error right away when text is inserted before it', async () => {
+    it('shifts a Slip right away when text is inserted before it', async () => {
       const field = setup();
       await field.type('I will recieve it');
 
@@ -256,7 +256,7 @@ describe('createFieldChecker', () => {
       ]);
     });
 
-    it('shifts an Error left when text before it is deleted', async () => {
+    it('shifts a Slip left when text before it is deleted', async () => {
       const field = setup();
       await field.type('Yes, I will recieve it');
 
@@ -265,7 +265,7 @@ describe('createFieldChecker', () => {
       expect(immediate.map((e) => e.start)).toEqual(['I will recieve it'.indexOf('recieve')]);
     });
 
-    it('leaves an Error in place when text is added after it', async () => {
+    it('leaves a Slip in place when text is added after it', async () => {
       const field = setup();
       await field.type('I will recieve it');
 
@@ -274,7 +274,7 @@ describe('createFieldChecker', () => {
       expect(immediate.map((e) => e.start)).toEqual([7]);
     });
 
-    it('removes an Error immediately when an edit lands inside its words', async () => {
+    it('removes a Slip immediately when an edit lands inside its words', async () => {
       const field = setup();
       await field.type('I will recieve it');
 
@@ -283,7 +283,7 @@ describe('createFieldChecker', () => {
       expect(immediate).toEqual([]);
     });
 
-    it('removes an Error immediately when a letter is typed right at its end', async () => {
+    it('removes a Slip immediately when a letter is typed right at its end', async () => {
       const field = setup();
       await field.type('I will recieve it');
 
@@ -292,7 +292,7 @@ describe('createFieldChecker', () => {
       expect(immediate).toEqual([]);
     });
 
-    it('keeps an Error when a space is typed right after it', async () => {
+    it('keeps a Slip when a space is typed right after it', async () => {
       const field = setup();
       await field.type('I will recieve');
 
@@ -301,7 +301,7 @@ describe('createFieldChecker', () => {
       expect(immediate).toHaveLength(1);
     });
 
-    it('notifies with the re-checked Errors once the user pauses', async () => {
+    it('notifies with the re-checked Slips once the user pauses', async () => {
       const field = setup();
       await field.type('I will recieve it');
 
@@ -347,7 +347,7 @@ describe('createFieldChecker', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('keeps Errors from untouched paragraphs, at their shifted offsets', async () => {
+    it('keeps Slips from untouched paragraphs, at their shifted offsets', async () => {
       const field = setup();
       const before = 'Intro line.';
       const flagged = 'I will recieve it.';
@@ -358,7 +358,7 @@ describe('createFieldChecker', () => {
       expect(latest.map((e) => e.start)).toEqual([flagged.indexOf('recieve')]);
     });
 
-    it('offsets Errors found in a later paragraph into whole-field coordinates', async () => {
+    it('offsets Slips found in a later paragraph into whole-field coordinates', async () => {
       const field = setup();
       const intro = 'Hello there.';
       const flagged = 'I will recieve it.';
@@ -380,16 +380,16 @@ describe('createFieldChecker', () => {
       );
     }
 
-    it('does not crash or wrongly clear existing Errors', async () => {
+    it('does not crash or wrongly clear existing Slips', async () => {
       const field = setup();
       await field.type('I will recieve it');
-      const errorsBefore = latest;
+      const slipsBefore = latest;
 
       rateLimitOnce();
       await field.type('I will recieve it now');
 
       expect(latest.length).toBeGreaterThan(0);
-      expect(errorsBefore).toHaveLength(1);
+      expect(slipsBefore).toHaveLength(1);
       expect(field.update('I will recieve it now')).toHaveLength(1);
     });
 
@@ -463,7 +463,7 @@ describe('createFieldChecker', () => {
   });
 
   describe('personal dictionary', () => {
-    it('produces no spelling Error for a dictionary word', async () => {
+    it('produces no spelling Slip for a dictionary word', async () => {
       const field = setup({ hostname: 'github.com', settings: { dictionary: ['Recieve'] } });
 
       await field.type('I will recieve it');
@@ -471,7 +471,7 @@ describe('createFieldChecker', () => {
       expect(latest).toEqual([]);
     });
 
-    it('shows the Error again once the word is removed from the dictionary', async () => {
+    it('shows the Slip again once the word is removed from the dictionary', async () => {
       const settings: Partial<Settings> = { dictionary: ['recieve'] };
       const field = setup({ hostname: 'github.com', settings });
       await field.type('I will recieve it');
@@ -479,24 +479,24 @@ describe('createFieldChecker', () => {
 
       settings.dictionary = [];
 
-      expect(field.errors().map((e) => e.kind)).toEqual(['spelling']);
+      expect(field.slips().map((e) => e.kind)).toEqual(['spelling']);
     });
   });
 
   describe('ignore here', () => {
-    it('keeps an ignored Error hidden when the paragraph around its unchanged word is re-checked', async () => {
+    it('keeps an ignored Slip hidden when the paragraph around its unchanged word is re-checked', async () => {
       const field = setup();
       await field.type('I will recieve it');
-      const [error] = latest;
+      const [slip] = latest;
 
-      expect(field.ignore(error!.id)).toEqual([]);
+      expect(field.ignore(slip!.id)).toEqual([]);
       await field.type('I will recieve it. Thanks');
 
       expect(sentTexts()).toEqual(['I will recieve it', 'I will recieve it. Thanks']);
       expect(latest).toEqual([]);
     });
 
-    it('still shows other Errors in the field', async () => {
+    it('still shows other Slips in the field', async () => {
       const field = setup();
       await field.type('I will recieve a apple');
 
@@ -506,8 +506,8 @@ describe('createFieldChecker', () => {
     });
   });
 
-  describe('error counter', () => {
-    it('counts an Error once its sentence is finished', async () => {
+  describe('tally', () => {
+    it('counts a Slip once its sentence is finished', async () => {
       const field = setup();
 
       await field.type('I will recieve it.');
@@ -515,7 +515,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
     });
 
-    it('does not count an Error while its sentence is still being typed', async () => {
+    it('does not count a Slip while its sentence is still being typed', async () => {
       const field = setup();
 
       await field.type('I will recieve it');
@@ -523,7 +523,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({});
     });
 
-    it('counts an Error once a line break ends its sentence', async () => {
+    it('counts a Slip once a line break ends its sentence', async () => {
       const field = setup();
 
       await field.type('I will recieve it\nThanks');
@@ -531,7 +531,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
     });
 
-    it('waits for the LLM to check a sentence a line break ended, then counts its Error', async () => {
+    it('waits for the LLM to check a sentence a line break ended, then counts its Slip', async () => {
       const field = setup(undefined, true);
       const sentence = 'She ate a apple';
       llmReplies[sentence] = llmReply([
@@ -545,7 +545,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ grammar: { 'Article usage': 1 } });
     });
 
-    it('counts the same Error flagged again across rechecks only once', async () => {
+    it('counts the same Slip flagged again across rechecks only once', async () => {
       const field = setup();
       await field.type('I will recieve it.');
 
@@ -557,7 +557,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
     });
 
-    it('counts the same Error flagged again in another field only once', async () => {
+    it('counts the same Slip flagged again in another field only once', async () => {
       await setup().type('I will recieve it.');
 
       await setup().type('I will recieve it.');
@@ -565,7 +565,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
     });
 
-    it('counts an Error still in the field again after the counts are reset', async () => {
+    it('counts a Slip still in the field again after the counts are reset', async () => {
       const field = setup();
       await field.type('I will recieve it.');
 
@@ -576,7 +576,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
     });
 
-    it('counts two different Errors of the same type twice', async () => {
+    it('counts two different Slips of the same type twice', async () => {
       const field = setup();
 
       await field.type('I will recieve it. You recieve it too.');
@@ -584,7 +584,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 2 } });
     });
 
-    it('does not count an Error the user ignored before its sentence was finished', async () => {
+    it('does not count a Slip the user ignored before its sentence was finished', async () => {
       const field = setup();
       await field.type('I will recieve it');
 
@@ -594,7 +594,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({});
     });
 
-    it('waits for the LLM, then counts a merged Error once, as the LLM classified it', async () => {
+    it('waits for the LLM, then counts a merged Slip once, as the LLM classified it', async () => {
       const field = setup(undefined, true);
       const sentence = 'She ate a apple.';
       llmReplies[sentence] = llmReply([
@@ -608,7 +608,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ grammar: { 'Article usage': 1 } });
     });
 
-    it('counts the LanguageTool Errors it waited on once the LLM fails', async () => {
+    it('counts the LanguageTool Slips it waited on once the LLM fails', async () => {
       const field = setup(undefined, true);
       llmResponses.push(() => new Response('nope', { status: 500 }));
 
@@ -618,7 +618,7 @@ describe('createFieldChecker', () => {
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
     });
 
-    it('counts LanguageTool Errors without waiting when the LLM is not allowed', async () => {
+    it('counts LanguageTool Slips without waiting when the LLM is not allowed', async () => {
       const field = setup({ hostname: 'github.com', settings: { llmConsent: false } }, true);
 
       await field.type('I will recieve it.');
@@ -666,7 +666,7 @@ describe('createFieldChecker', () => {
       expect(llmSent()).toEqual(['I am agree with you.', 'Hello.']);
     });
 
-    it('merges overlapping LanguageTool and LLM Errors into one, with the LLM explanation', async () => {
+    it('merges overlapping LanguageTool and LLM Slips into one, with the LLM explanation', async () => {
       const field = setup(undefined, true);
       const sentence = 'She ate a apple.';
       const explanation = 'Use "an" before a word that starts with a vowel sound.';
@@ -680,7 +680,7 @@ describe('createFieldChecker', () => {
       expect(latest[0]).toMatchObject({ start: 8, end: 15, explanation, source: 'llm' });
     });
 
-    it('keeps a LanguageTool Error that no LLM Error overlaps', async () => {
+    it('keeps a LanguageTool Slip that no LLM Slip overlaps', async () => {
       const field = setup(undefined, true);
       const sentence = 'I will recieve a apple.';
       llmReplies[sentence] = llmReply([
@@ -692,7 +692,7 @@ describe('createFieldChecker', () => {
       expect(latest.map((e) => e.source)).toEqual(['languagetool', 'llm']);
     });
 
-    it('keeps a LanguageTool Error that an LLM spelling Error on a dictionary word overlaps', async () => {
+    it('keeps a LanguageTool Slip that an LLM spelling Slip on a dictionary word overlaps', async () => {
       const field = setup({ hostname: 'github.com', settings: { llmConsent: true, llmApiKey: 'k', dictionary: ['apple'] } }, true);
       const sentence = 'She ate a apple.';
       llmReplies[sentence] = llmReply([
@@ -753,7 +753,7 @@ describe('createFieldChecker', () => {
       expect(latest.map((e) => [e.start, e.type])).toEqual([[2, 'Verb form']]);
     });
 
-    it('shows no Errors for a sentence with no mistakes', async () => {
+    it('shows no Slips for a sentence with no mistakes', async () => {
       const field = setup(undefined, true);
       llmReplies['I agree with you.'] = llmReply([]);
 
@@ -764,7 +764,7 @@ describe('createFieldChecker', () => {
     });
 
     describe('when the model is overloaded', () => {
-      it('asks the fallback model instead and shows its Errors', async () => {
+      it('asks the fallback model instead and shows its Slips', async () => {
         const field = setup(undefined, true);
         const sentence = 'I am agree with you.';
         llmReplies[sentence] = llmReply([
@@ -912,7 +912,7 @@ describe('createFieldChecker', () => {
         expect(latest.map((e) => e.source)).toEqual(['llm']);
       });
 
-      it('still returns LanguageTool Errors while the LLM is failing', async () => {
+      it('still returns LanguageTool Slips while the LLM is failing', async () => {
         const field = setup({ hostname: 'github.com', settings: allowed }, true);
         llmResponses.push(() => new Response('oops', { status: 500 }));
         await field.typeAndWait('I am agree with you.');
@@ -979,7 +979,7 @@ describe('createFieldChecker', () => {
         expect(sentTexts()).toEqual(['I will recieve it.']);
       });
 
-      it('clears LLM Errors once the LLM is no longer allowed', async () => {
+      it('clears LLM Slips once the LLM is no longer allowed', async () => {
         const settings: Partial<Settings> = { ...allowed };
         const field = setup({ hostname: 'github.com', settings }, true);
         llmReplies['I am agree with you.'] = llmReply([
@@ -1025,7 +1025,7 @@ describe('createFieldChecker', () => {
         correction: 'agree',
       };
 
-      it('places an Error at its exactly quoted text', async () => {
+      it('places a Slip at its exactly quoted text', async () => {
         const field = setup(undefined, true);
         const sentence = 'I am agree with you.';
         llmReplies[sentence] = llmReply([{ quote: 'am agree', ...agree }]);
@@ -1046,7 +1046,7 @@ describe('createFieldChecker', () => {
         ]);
       });
 
-      it('offsets an Error in a later sentence into whole-field coordinates', async () => {
+      it('offsets a Slip in a later sentence into whole-field coordinates', async () => {
         const field = setup(undefined, true);
         llmReplies['I am agree with you.'] = llmReply([{ quote: 'am agree', ...agree }]);
 
@@ -1076,7 +1076,7 @@ describe('createFieldChecker', () => {
         expect(latest.map((e) => e.start)).toEqual([3, 19]);
       });
 
-      it('drops an Error whose quote is not in the sentence', async () => {
+      it('drops a Slip whose quote is not in the sentence', async () => {
         const field = setup(undefined, true);
         const sentence = 'I am agree with you.';
         llmReplies[sentence] = llmReply([{ quote: 'am agreeing', ...agree }]);
@@ -1086,7 +1086,7 @@ describe('createFieldChecker', () => {
         expect(latest).toEqual([]);
       });
 
-      it('produces no Errors, and does not crash, when the reply is not valid JSON', async () => {
+      it('produces no Slips, and does not crash, when the reply is not valid JSON', async () => {
         const field = setup(undefined, true);
         const sentence = 'I am agree with you.';
         llmReplies[sentence] = 'Sure! Here are the errors: [am agree]';

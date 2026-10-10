@@ -1,4 +1,4 @@
-import { makeErrorId, type CheckError, type ErrorKind } from '../errors';
+import { makeSlipId, type Slip, type SlipKind } from '../slips';
 import { RateLimitedError, type Engine } from '../engine';
 
 export interface LanguageToolConfig {
@@ -24,7 +24,7 @@ interface LanguageToolResponse {
 
 export function createLanguageToolEngine(config: LanguageToolConfig): Engine {
   return {
-    async check(text: string): Promise<CheckError[]> {
+    async check(text: string): Promise<Slip[]> {
       const response = await fetch(`${config.apiUrl}/v2/check`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -39,17 +39,17 @@ export function createLanguageToolEngine(config: LanguageToolConfig): Engine {
       }
 
       const data = (await response.json()) as LanguageToolResponse;
-      return data.matches.map((match) => toCheckError(text, match));
+      return data.matches.map((match) => toSlip(text, match));
     },
   };
 }
 
-function toCheckError(text: string, match: LanguageToolMatch): CheckError {
+function toSlip(text: string, match: LanguageToolMatch): Slip {
   const start = match.offset;
   const end = match.offset + match.length;
   const kind = kindFromIssueType(match.rule.issueType);
   return {
-    id: makeErrorId(kind, text.slice(start, end)),
+    id: makeSlipId(kind, text.slice(start, end)),
     start,
     end,
     kind,
@@ -60,7 +60,7 @@ function toCheckError(text: string, match: LanguageToolMatch): CheckError {
   };
 }
 
-function kindFromIssueType(issueType: string | undefined): ErrorKind {
+function kindFromIssueType(issueType: string | undefined): SlipKind {
   switch (issueType) {
     case 'misspelling':
       return 'spelling';

@@ -1,6 +1,6 @@
 # Type Right
 
-A personal browser extension that flags English mistakes as you type, so you can learn from them and fix them yourself instead of being auto-corrected.
+A personal browser extension that flags slips in your English as you type, so you can learn from them and fix them yourself instead of being auto-corrected.
 
 ## Language
 
@@ -12,7 +12,7 @@ _Avoid_: input, box, editor
 
 **Slip**:
 One language mistake flagged on a span of a Field's text. It has a Kind, a Type, an explanation and maybe suggestions. In code: `Slip`.
-_Avoid_: error (that means a failure in the code or app), issue, match, problem; "mistake" only in plain UI text
+_Avoid_: error (that means a failure in the code or app), issue, match, problem, mistake
 
 **Kind**:
 One of three fixed groups a Slip belongs to: **spelling** (red), **grammar** (blue), **wording** (purple). It sets the underline color.

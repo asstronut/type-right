@@ -1,5 +1,5 @@
 import { storage } from 'wxt/utils/storage';
-import { addToTally, EMPTY_TALLY, normalizeTally, type ErrorSighting, type ErrorTally } from './error-tally';
+import { addToTally, EMPTY_TALLY, normalizeTally, type SlipSighting, type SlipTally } from './slip-tally';
 import { DEFAULT_SETTINGS, dictionaryKey, mergeSettings, normalizeSettings, type Settings } from './settings';
 
 /** Local, not sync: the API key shouldn't be copied to other browsers' profiles. */
@@ -7,7 +7,8 @@ const settingsItem = storage.defineItem<Partial<Settings>>('local:settings', {
   fallback: DEFAULT_SETTINGS,
 });
 
-const tallyItem = storage.defineItem<ErrorTally>('local:errorTally', {
+/** Keeps its pre-rename key, so counts saved before Errors became Slips survive. */
+const tallyItem = storage.defineItem<SlipTally>('local:errorTally', {
   fallback: EMPTY_TALLY,
 });
 
@@ -46,26 +47,26 @@ export const store = {
     return settingsItem.watch((value) => onChange(normalizeSettings(value)));
   },
 
-  async getTally(): Promise<ErrorTally> {
+  async getTally(): Promise<SlipTally> {
     return normalizeTally(await tallyItem.getValue());
   },
 
   /**
-   * Counts each Error not counted before. Not atomic: only the background
+   * Counts each Slip not counted before. Not atomic: only the background
    * worker writes the tally, one write at a time, so no two writes overlap.
    */
-  async recordErrors(sightings: ErrorSighting[]): Promise<void> {
+  async recordSlips(sightings: SlipSighting[]): Promise<void> {
     const current = await this.getTally();
     const next = addToTally(current, sightings);
     if (next !== current) await tallyItem.setValue(next);
   },
 
-  /** Sets every count to zero and forgets which Errors were counted. */
+  /** Sets every count to zero and forgets which Slips were counted. */
   async resetTally(): Promise<void> {
     await tallyItem.setValue(EMPTY_TALLY);
   },
 
-  watchTally(onChange: (tally: ErrorTally) => void): () => void {
+  watchTally(onChange: (tally: SlipTally) => void): () => void {
     return tallyItem.watch((value) => onChange(normalizeTally(value)));
   },
 };

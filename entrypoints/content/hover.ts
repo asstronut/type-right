@@ -1,5 +1,5 @@
-import type { CheckError } from '../../lib/errors';
-import type { FieldOverlay, ErrorHit } from './field-overlay';
+import type { Slip } from '../../lib/slips';
+import type { FieldOverlay, SlipHit } from './field-overlay';
 import { HoverCard } from './hover-card';
 
 /** How long the pointer must rest on one underline before its card opens. */
@@ -9,12 +9,12 @@ const CLOSE_DELAY_MS = 250;
 
 /** What the Hover card's buttons do for one field. */
 export interface HoverActions {
-  ignore(error: CheckError): void;
+  ignore(slip: Slip): void;
   addToDictionary(word: string): void;
 }
 
 interface Pending {
-  error: CheckError;
+  slip: Slip;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -42,7 +42,7 @@ export class HoverController {
   /** Hovers `field`'s underlines until `signal` aborts. */
   watch(field: HTMLTextAreaElement, overlay: FieldOverlay, actions: HoverActions, signal: AbortSignal): void {
     const listen = { signal };
-    field.addEventListener('mousemove', (event) => this.onHover(field, actions, overlay.errorAt(event.clientX, event.clientY)), listen);
+    field.addEventListener('mousemove', (event) => this.onHover(field, actions, overlay.slipAt(event.clientX, event.clientY)), listen);
     field.addEventListener('mouseleave', () => this.onHover(field, actions, undefined), listen);
     // Typing (not shortcuts like Ctrl+C or bare modifiers) closes the card.
     field.addEventListener('input', () => this.close(), listen);
@@ -51,22 +51,22 @@ export class HoverController {
     }, listen);
   }
 
-  private onHover(field: HTMLTextAreaElement, actions: HoverActions, hit: ErrorHit | undefined): void {
+  private onHover(field: HTMLTextAreaElement, actions: HoverActions, hit: SlipHit | undefined): void {
     if (!hit) {
       this.cancelPending();
       this.scheduleClose();
       return;
     }
-    if (this.card.shownError && sameError(this.card.shownError, hit.error)) {
+    if (this.card.shownSlip && sameSlip(this.card.shownSlip, hit.slip)) {
       this.cancelClose();
       return;
     }
-    if (this.pending && sameError(this.pending.error, hit.error)) return;
+    if (this.pending && sameSlip(this.pending.slip, hit.slip)) return;
 
     // A new underline: restart the delay, so sweeping across text never opens a card.
     this.cancelPending();
     this.pending = {
-      error: hit.error,
+      slip: hit.slip,
       timer: setTimeout(() => {
         this.pending = null;
         this.open(field, actions, hit);
@@ -74,26 +74,26 @@ export class HoverController {
     };
   }
 
-  private open(field: HTMLTextAreaElement, actions: HoverActions, { error, rect }: ErrorHit): void {
+  private open(field: HTMLTextAreaElement, actions: HoverActions, { slip, rect }: SlipHit): void {
     this.cancelClose();
-    const flagged = field.value.slice(error.start, error.end);
+    const flagged = field.value.slice(slip.start, slip.end);
     this.card.show(
       {
-        error,
+        slip,
         onApply:
-          error.kind === 'spelling'
+          slip.kind === 'spelling'
             ? (suggestion) => {
                 this.close();
-                applySuggestion(field, error, flagged, suggestion);
+                applySuggestion(field, slip, flagged, suggestion);
               }
             : undefined,
         onIgnore: () => {
           this.close();
-          actions.ignore(error);
+          actions.ignore(slip);
         },
         // A multi-word span (the LLM may quote one) isn't a word to learn.
         onAddToDictionary:
-          error.kind === 'spelling' && !/\s/.test(flagged.trim())
+          slip.kind === 'spelling' && !/\s/.test(flagged.trim())
             ? () => {
                 this.close();
                 actions.addToDictionary(flagged);
@@ -111,7 +111,7 @@ export class HoverController {
   }
 
   private scheduleClose(): void {
-    if (!this.card.shownError || this.closeTimer) return;
+    if (!this.card.shownSlip || this.closeTimer) return;
     this.closeTimer = setTimeout(() => {
       this.closeTimer = undefined;
       this.card.hide();
@@ -129,31 +129,31 @@ export class HoverController {
   }
 }
 
-function sameError(a: CheckError, b: CheckError): boolean {
+function sameSlip(a: Slip, b: Slip): boolean {
   return a.start === b.start && a.end === b.end && a.id === b.id;
 }
 
 /**
- * Replaces the Error's text the way typing would: through the editing command
+ * Replaces the Slip's text the way typing would: through the editing command
  * stack, so Ctrl+Z restores the original and the site gets real
  * beforeinput/input events (and keeps the fix on preview or submit).
  */
 function applySuggestion(
   field: HTMLTextAreaElement,
-  error: CheckError,
+  slip: Slip,
   flagged: string,
   suggestion: string,
 ): void {
   // The text moved on since the card opened; replacing by offset would hit the wrong words.
-  if (field.value.slice(error.start, error.end) !== flagged) return;
+  if (field.value.slice(slip.start, slip.end) !== flagged) return;
 
   field.focus();
-  field.setSelectionRange(error.start, error.end);
+  field.setSelectionRange(slip.start, slip.end);
   if (document.execCommand('insertText', false, suggestion)) return;
 
   // execCommand is deprecated and may one day be removed; fall back to a plain
   // edit, which the site still sees but which can't be undone with Ctrl+Z.
-  field.setRangeText(suggestion, error.start, error.end, 'end');
+  field.setRangeText(suggestion, slip.start, slip.end, 'end');
   field.dispatchEvent(
     new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: suggestion }),
   );

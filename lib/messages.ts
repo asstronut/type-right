@@ -1,6 +1,6 @@
 import type { LlmFailure } from './engine';
-import type { CheckError } from './errors';
-import type { ErrorSighting } from './error-tally';
+import type { Slip } from './slips';
+import type { SlipSighting } from './slip-tally';
 
 /** Asks the background worker to run an engine: LanguageTool on a paragraph, or the LLM on one finished sentence. */
 export interface CheckMessage {
@@ -9,13 +9,13 @@ export interface CheckMessage {
 }
 
 export type CheckResponse =
-  | { ok: true; errors: CheckError[] }
+  | { ok: true; slips: Slip[] }
   | { ok: false; reason: 'rate-limited'; retryAfterMs?: number }
   | { ok: false; reason: 'llm-failed'; failure: LlmFailure }
   | { ok: false; reason: 'failed' };
 
 /**
- * Asks the background worker to add newly seen Errors to the Popup's counts,
+ * Asks the background worker to add newly seen Slips to the Popup's counts,
  * or to reset them; it applies these one at a time.
  */
-export type TallyMessage = { type: 'record-errors'; sightings: ErrorSighting[] } | { type: 'reset-tally' };
+export type TallyMessage = { type: 'record-slips'; sightings: SlipSighting[] } | { type: 'reset-tally' };

@@ -1,5 +1,5 @@
-import { makeSightingKey, type CheckError } from './errors';
-import type { ErrorSighting } from './error-tally';
+import { makeSightingKey, type Slip } from './slips';
+import type { SlipSighting } from './slip-tally';
 import { LlmFailedError, RateLimitedError, type Engine, type LlmFailure } from './engine';
 import type { LlmProviderId } from './llm-providers';
 import { isInDictionary, isLlmAllowed, isSiteDisabled, isSiteExcluded, type Settings } from './settings';
@@ -29,42 +29,42 @@ export interface FieldCheckerOptions {
   engines: CheckEngines;
   /** The site the field is on; without it every check runs. */
   site?: CheckSite;
-  /** Called with the field's current Errors whenever a check changes them. */
-  onChange(errors: CheckError[]): void;
+  /** Called with the field's current Slips whenever a check changes them. */
+  onChange(slips: Slip[]): void;
   /** Called with the LLM health whenever an LLM check changes it. */
   onLlmHealthChange?(health: LlmHealth): void;
   /**
-   * Called with Errors this field hasn't reported before, once their sentence
+   * Called with Slips this field hasn't reported before, once their sentence
    * is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is
-   * active, the LLM has checked it too, so an Error is reported as it was
+   * active, the LLM has checked it too, so a Slip is reported as it was
    * finally classified.
    */
-  onErrorsSeen?(sightings: ErrorSighting[]): void;
+  onSlipsSeen?(sightings: SlipSighting[]): void;
   debounceMs?: number;
   llmDebounceMs?: number;
 }
 
 export interface FieldChecker {
   /**
-   * Tells the checker the field's full text changed. Returns the Errors that are
+   * Tells the checker the field's full text changed. Returns the Slips that are
    * still valid for the new text (shifted or dropped to match the edit) right
    * away, and schedules a debounced re-check of only the edited paragraph.
    */
-  update(text: string): CheckError[];
+  update(text: string): Slip[];
   /**
-   * The field's current Errors, without re-checking. Call it after Settings
+   * The field's current Slips, without re-checking. Call it after Settings
    * change (e.g. the dictionary) to re-render with them applied.
    */
-  errors(): CheckError[];
+  slips(): Slip[];
   /**
-   * Hides the Error with this id in this field for as long as the field
-   * lives, re-checks included. Notifies and returns the remaining Errors.
+   * Hides the Slip with this id in this field for as long as the field
+   * lives, re-checks included. Notifies and returns the remaining Slips.
    */
-  ignore(id: string): CheckError[];
+  ignore(id: string): Slip[];
   /** The LLM health for the current Settings. */
   llmHealth(): LlmHealth;
   /**
-   * Forgets which Errors were passed to `onErrorsSeen`, after the counts are
+   * Forgets which Slips were passed to `onSlipsSeen`, after the counts are
    * reset, so the field's next check reports them again.
    */
   forgetReported(): void;
@@ -91,8 +91,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   const llmDebounceMs = options.llmDebounceMs ?? DEFAULT_LLM_DEBOUNCE_MS;
 
   let text = '';
-  let ltErrors: CheckError[] = [];
-  let llmErrors: CheckError[] = [];
+  let ltSlips: Slip[] = [];
+  let llmSlips: Slip[] = [];
   /** Span of the text edited since it was last successfully checked. */
   let dirty: Range | null = null;
   let version = 0;
@@ -104,51 +104,51 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let llmRunning = false;
   let llmBlockedUntil = 0;
   /** LLM results by sentence text, so an unchanged sentence is never sent twice. */
-  const llmCache = new Map<string, CheckError[]>();
+  const llmCache = new Map<string, Slip[]>();
   /** The LLM provider the cached results came from. */
   let llmCacheProvider: LlmProviderId | undefined;
   /** The last LLM check's failure, and the provider and key it happened with. */
   let llmFailure: { reason: LlmFailure; credentials: string } | undefined;
-  /** Ids of the Errors the user chose to ignore in this field. */
+  /** Ids of the Slips the user chose to ignore in this field. */
   const ignored = new Set<string>();
-  /** Keys of the Errors already passed to `onErrorsSeen`. */
+  /** Keys of the Slips already passed to `onSlipsSeen`. */
   const reported = new Set<string>();
 
-  function update(next: string): CheckError[] {
-    if (next === text) return errors();
+  function update(next: string): Slip[] {
+    if (next === text) return slips();
 
     const edit = diff(text, next);
-    const follow = (list: CheckError[]) =>
+    const follow = (list: Slip[]) =>
       list
-        .filter((error) => !touchesEdit(error, edit, text, next))
-        .map((error) => (error.start >= edit.oldEnd ? shift(error, edit.newEnd - edit.oldEnd) : error));
-    ltErrors = follow(ltErrors);
-    llmErrors = follow(llmErrors);
+        .filter((slip) => !touchesEdit(slip, edit, text, next))
+        .map((slip) => (slip.start >= edit.oldEnd ? shift(slip, edit.newEnd - edit.oldEnd) : slip));
+    ltSlips = follow(ltSlips);
+    llmSlips = follow(llmSlips);
     dirty = unionRange(dirty && mapRange(dirty, edit), { start: edit.start, end: edit.newEnd });
     text = next;
     version++;
     schedule(debounceMs);
     if (options.engines.llm) scheduleLlm(llmDebounceMs);
-    return errors();
+    return slips();
   }
 
   /**
-   * The field's Errors from both engines, in text order. Where both flag the
-   * same words only the LLM's Error is kept, for its clearer explanation.
-   * Spelling Errors on dictionary words are dropped before that merge, so they
-   * never hide another Error; ignored Errors are dropped after it, so an
-   * ignored LLM Error takes the LanguageTool Errors it replaced with it.
+   * The field's Slips from both engines, in text order. Where both flag the
+   * same words only the LLM's Slip is kept, for its clearer explanation.
+   * Spelling Slips on dictionary words are dropped before that merge, so they
+   * never hide another Slip; ignored Slips are dropped after it, so an
+   * ignored LLM Slip takes the LanguageTool Slips it replaced with it.
    */
-  function errors(): CheckError[] {
+  function slips(): Slip[] {
     const settings = options.site?.settings();
-    const withoutDictionaryWords = (list: CheckError[]) =>
+    const withoutDictionaryWords = (list: Slip[]) =>
       settings
         ? list.filter((e) => !(e.kind === 'spelling' && isInDictionary(text.slice(e.start, e.end), settings)))
         : list;
-    const lt = withoutDictionaryWords(ltErrors);
-    const llm = withoutDictionaryWords(llmErrors);
+    const lt = withoutDictionaryWords(ltSlips);
+    const llm = withoutDictionaryWords(llmSlips);
     const unmatched = lt.filter((l) => !llm.some((m) => l.start < m.end && m.start < l.end));
-    return [...unmatched, ...llm].filter((error) => !ignored.has(error.id)).sort((a, b) => a.start - b.start);
+    return [...unmatched, ...llm].filter((slip) => !ignored.has(slip.id)).sort((a, b) => a.start - b.start);
   }
 
   function schedule(delayMs: number): void {
@@ -184,7 +184,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     );
 
     for (const paragraph of targets) {
-      let found: CheckError[] = [];
+      let found: Slip[] = [];
       const paragraphText = text.slice(paragraph.start, paragraph.end);
       if (paragraphText.trim()) {
         try {
@@ -202,8 +202,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         if (version !== startVersion || disposed) return;
       }
 
-      ltErrors = [
-        ...ltErrors.filter((e) => e.end < paragraph.start || e.start > paragraph.end),
+      ltSlips = [
+        ...ltSlips.filter((e) => e.end < paragraph.start || e.start > paragraph.end),
         ...found.map((e) => shift(e, paragraph.start)),
       ];
       dirty = dirty && dirty.end > paragraph.end ? { ...dirty, start: paragraph.end } : null;
@@ -223,8 +223,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (disposed || !llm) return;
     if (options.site && !isLlmAllowed(options.site.hostname, options.site.settings())) {
       // Consent withdrawn or the site excluded since the last check: drop what the LLM found.
-      if (llmErrors.length) {
-        llmErrors = [];
+      if (llmSlips.length) {
+        llmSlips = [];
         notify();
       }
       return;
@@ -252,7 +252,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     }
   }
 
-  /** Puts each finished sentence's LLM Errors in place, asking the LLM only about uncached ones. */
+  /** Puts each finished sentence's LLM Slips in place, asking the LLM only about uncached ones. */
   async function checkSentences(llm: Engine): Promise<void> {
     const startVersion = version;
     for (const sentence of finishedSentences(text)) {
@@ -273,43 +273,43 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         if (version !== startVersion || disposed) return;
       }
 
-      llmErrors = [
-        ...llmErrors.filter((e) => e.end <= sentence.start || e.start >= sentence.end),
+      llmSlips = [
+        ...llmSlips.filter((e) => e.end <= sentence.start || e.start >= sentence.end),
         ...found.map((e) => shift(e, sentence.start)),
       ];
       notify();
     }
   }
 
-  function ignore(id: string): CheckError[] {
+  function ignore(id: string): Slip[] {
     ignored.add(id);
     return notify();
   }
 
-  /** Passes the field's current Errors to `onChange`, and reports any newly settled ones. */
-  function notify(): CheckError[] {
-    const current = errors();
+  /** Passes the field's current Slips to `onChange`, and reports any newly settled ones. */
+  function notify(): Slip[] {
+    const current = slips();
     options.onChange(current);
     reportSightings(current);
     return current;
   }
 
-  function reportSightings(current: CheckError[]): void {
-    if (!options.onErrorsSeen) return;
+  function reportSightings(current: Slip[]): void {
+    if (!options.onSlipsSeen) return;
     const waitForLlm = options.engines.llm !== undefined && llmHealth().state === 'active';
-    const sightings: ErrorSighting[] = [];
+    const sightings: SlipSighting[] = [];
     for (const sentence of finishedSentences(text)) {
       const sentenceText = text.slice(sentence.start, sentence.end);
       if (waitForLlm && !llmCache.has(sentenceText)) continue;
-      for (const error of current) {
-        if (error.start < sentence.start || error.end > sentence.end) continue;
-        const key = makeSightingKey(error.kind, sentenceText, text.slice(error.start, error.end));
+      for (const slip of current) {
+        if (slip.start < sentence.start || slip.end > sentence.end) continue;
+        const key = makeSightingKey(slip.kind, sentenceText, text.slice(slip.start, slip.end));
         if (reported.has(key)) continue;
         reported.add(key);
-        sightings.push({ key, kind: error.kind, type: error.type });
+        sightings.push({ key, kind: slip.kind, type: slip.type });
       }
     }
-    if (sightings.length) options.onErrorsSeen(sightings);
+    if (sightings.length) options.onSlipsSeen(sightings);
   }
 
   function llmHealth(): LlmHealth {
@@ -327,8 +327,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (reason === llmFailure?.reason) return;
     llmFailure = reason && { reason, credentials: credentials() };
     options.onLlmHealthChange?.(llmHealth());
-    // Errors held back for the LLM count now that it can't check their sentence.
-    if (reason) reportSightings(errors());
+    // Slips held back for the LLM count now that it can't check their sentence.
+    if (reason) reportSightings(slips());
   }
 
   /** Identifies the provider and key an LLM request is sent with. */
@@ -338,7 +338,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   }
 
   /** Keeps the cache bounded on long-lived fields by forgetting the oldest sentence first. */
-  function cacheLlmResult(sentenceText: string, found: CheckError[]): void {
+  function cacheLlmResult(sentenceText: string, found: Slip[]): void {
     llmCache.set(sentenceText, found);
     if (llmCache.size > MAX_CACHED_SENTENCES) llmCache.delete(llmCache.keys().next().value!);
   }
@@ -349,7 +349,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (llmTimer) clearTimeout(llmTimer);
   }
 
-  return { update, errors, ignore, llmHealth, forgetReported: () => reported.clear(), dispose };
+  return { update, slips, ignore, llmHealth, forgetReported: () => reported.clear(), dispose };
 }
 
 interface Edit {
@@ -378,19 +378,19 @@ function isWordChar(char: string | undefined): boolean {
 }
 
 /**
- * Whether the edit changes the words an Error covers. An edit that merely
+ * Whether the edit changes the words a Slip covers. An edit that merely
  * touches its edge only counts when it joins onto the word (typing a letter
  * right after it), not when it follows it (typing a space).
  */
-function touchesEdit(error: CheckError, edit: Edit, prev: string, next: string): boolean {
-  if (error.end < edit.start || error.start > edit.oldEnd) return false;
-  if (error.end > edit.start && error.start < edit.oldEnd) return true;
-  if (error.end === edit.start) return isWordChar(prev[edit.start]) || isWordChar(next[edit.start]);
+function touchesEdit(slip: Slip, edit: Edit, prev: string, next: string): boolean {
+  if (slip.end < edit.start || slip.start > edit.oldEnd) return false;
+  if (slip.end > edit.start && slip.start < edit.oldEnd) return true;
+  if (slip.end === edit.start) return isWordChar(prev[edit.start]) || isWordChar(next[edit.start]);
   return isWordChar(prev[edit.oldEnd - 1]) || isWordChar(next[edit.newEnd - 1]);
 }
 
-function shift(error: CheckError, by: number): CheckError {
-  return by === 0 ? error : { ...error, start: error.start + by, end: error.end + by };
+function shift(slip: Slip, by: number): Slip {
+  return by === 0 ? slip : { ...slip, start: slip.start + by, end: slip.end + by };
 }
 
 function mapRange(range: Range, edit: Edit): Range {
@@ -431,7 +431,7 @@ const SENTENCE_END = /[.?!]/;
 const CLOSERS = /[.?!"'”’)\]]/;
 
 /**
- * The finished sentences, ready for the LLM and the error counter: those
+ * The finished sentences, ready for the LLM and the Tally: those
  * ending in `.`, `?` or `!` (plus any closing quotes or brackets) followed by
  * whitespace or the end of the text, and the unpunctuated end of any line a
  * line break has finished, without trailing whitespace. A sentence never spans

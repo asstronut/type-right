@@ -1,4 +1,4 @@
-import type { CheckError } from '../../lib/errors';
+import type { Slip } from '../../lib/slips';
 import { KIND_COLORS } from './field-overlay';
 
 /** LanguageTool can return dozens of suggestions for a misspelling; only the first few are useful. */
@@ -6,7 +6,7 @@ const MAX_SUGGESTIONS = 5;
 const GAP_PX = 6;
 const VIEWPORT_MARGIN_PX = 8;
 
-const KIND_LABELS: Record<CheckError['kind'], string> = {
+const KIND_LABELS: Record<Slip['kind'], string> = {
   spelling: 'Spelling',
   grammar: 'Grammar',
   wording: 'Wording',
@@ -122,12 +122,12 @@ const STYLES = `
 `;
 
 export interface HoverCardContent {
-  error: CheckError;
-  /** Present only when the Error can be fixed in one click. */
+  slip: Slip;
+  /** Present only when the Slip can be fixed in one click. */
   onApply?: (suggestion: string) => void;
-  /** Hides this Error (every occurrence of its word, as ids are per word) in the field. */
+  /** Hides this Slip (every occurrence of its word, as ids are per word) in the field. */
   onIgnore: () => void;
-  /** Present only for single-word spelling Errors: stops the word being flagged anywhere. */
+  /** Present only for single-word spelling Slips: stops the word being flagged anywhere. */
   onAddToDictionary?: () => void;
 }
 
@@ -145,7 +145,7 @@ export interface HoverCardOptions {
 export class HoverCard {
   private readonly host: HTMLElement;
   private readonly root: ShadowRoot;
-  private shown: CheckError | null = null;
+  private shown: Slip | null = null;
 
   constructor(options: HoverCardOptions) {
     this.host = document.createElement('type-right-card');
@@ -170,7 +170,7 @@ export class HoverCard {
     });
   }
 
-  get shownError(): CheckError | null {
+  get shownSlip(): Slip | null {
     return this.shown;
   }
 
@@ -179,7 +179,7 @@ export class HoverCard {
     if (!this.host.isConnected) document.documentElement.appendChild(this.host);
     this.root.querySelector('.card')?.remove();
     this.root.appendChild(renderCard(content));
-    this.shown = content.error;
+    this.shown = content.slip;
 
     this.host.style.display = 'block';
     this.host.style.visibility = 'hidden';
@@ -216,22 +216,22 @@ export class HoverCard {
   }
 }
 
-function renderCard({ error, onApply, onIgnore, onAddToDictionary }: HoverCardContent): HTMLElement {
+function renderCard({ slip, onApply, onIgnore, onAddToDictionary }: HoverCardContent): HTMLElement {
   const card = el('div', 'card');
 
   const header = el('div', 'header');
-  header.append(el('span', `kind ${error.kind}`, KIND_LABELS[error.kind]), el('span', 'type', error.type));
-  card.append(header, el('p', 'explanation', error.explanation));
+  header.append(el('span', `kind ${slip.kind}`, KIND_LABELS[slip.kind]), el('span', 'type', slip.type));
+  card.append(header, el('p', 'explanation', slip.explanation));
 
   const showAnswer = el('button', 'show-answer', 'Show answer');
   showAnswer.type = 'button';
-  showAnswer.addEventListener('click', () => showAnswer.replaceWith(renderAnswer(error, onApply)));
+  showAnswer.addEventListener('click', () => showAnswer.replaceWith(renderAnswer(slip, onApply)));
   card.appendChild(showAnswer);
 
   const actions = el('div', 'actions');
-  actions.appendChild(actionButton('Ignore here', 'Hide this mistake everywhere in this field until the page reloads', onIgnore));
+  actions.appendChild(actionButton('Ignore here', 'Hide this slip everywhere in this field until the page reloads', onIgnore));
   if (onAddToDictionary) {
-    actions.appendChild(actionButton('Add to dictionary', 'Never flag this word as a spelling mistake again', onAddToDictionary));
+    actions.appendChild(actionButton('Add to dictionary', 'Never flag this word as a spelling slip again', onAddToDictionary));
   }
   card.appendChild(actions);
   return card;
@@ -245,8 +245,8 @@ function actionButton(label: string, title: string, onClick: () => void): HTMLBu
   return node;
 }
 
-function renderAnswer(error: CheckError, onApply: HoverCardContent['onApply']): HTMLElement {
-  const suggestions = error.suggestions.slice(0, MAX_SUGGESTIONS);
+function renderAnswer(slip: Slip, onApply: HoverCardContent['onApply']): HTMLElement {
+  const suggestions = slip.suggestions.slice(0, MAX_SUGGESTIONS);
   if (suggestions.length === 0) return el('p', 'none', 'No suggestion available.');
 
   const list = el('ul', 'answer');

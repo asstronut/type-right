@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { addToTally, EMPTY_TALLY, normalizeTally } from './error-tally';
+import { addToTally, EMPTY_TALLY, normalizeTally } from './slip-tally';
 
-describe('error tally', () => {
+describe('slip tally', () => {
   it('keeps counting after a stored tally is read back', () => {
     const stored = JSON.parse(JSON.stringify(addToTally(EMPTY_TALLY, [{ key: 'a', kind: 'grammar', type: 'Article' }])));
 

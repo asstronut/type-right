@@ -49,6 +49,7 @@ For development with hot reload, run `npm run dev`.
 | `npm test` | Run tests once (Vitest) |
 | `npm run test:watch` | Tests in watch mode |
 | `npm run serve:testpage` | Serve `test-page/` on port 5173 |
+| `npm run eval:llm [provider]` | Score the LLM prompt on `eval/llm/fixture.ts` (real API; provider id defaults to `gemini`; key variable per `KEY_VARIABLES` in `eval/llm/run.ts`, env or `.env.local`) |
 
 ## Architecture
 
@@ -78,6 +79,7 @@ Network calls run in the background service worker so API keys never reach page 
   - Gemini: `gemini-3.8-flash`, falls back to `gemini-3.5-flash-lite` on HTTP 503; HTTP 429 is a rate limit; sends `reasoning_effort: low`.
 - `lib/slips.ts`: `Slip` shape and stable Slip ids (derived from kind + flagged text, not position, so re-flagging the same Slip yields the same id), plus the Popup's counting key (kind + sentence text + flagged text).
 - `lib/slip-tally.ts`: the Popup's counts, stored in `chrome.storage.local`. The checker reports each Slip once its sentence is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is active, after the LLM has checked it; each distinct key is counted once. Tested in [checker.test.ts](lib/checker.test.ts) and [slip-tally.test.ts](lib/slip-tally.test.ts).
+- `eval/llm/`: on-demand LLM prompt eval. [fixture.ts](eval/llm/fixture.ts) holds sentences with expected Slip spans (plus correct sentences that must get none); [score.ts](eval/llm/score.ts) counts found, missed, false-positive and overlapping Slips; [run.ts](eval/llm/run.ts) sends the fixture through the real LLM Engine and prints results (`npm run eval:llm`, not part of `npm test`). Scoring is tested in [score.test.ts](eval/llm/score.test.ts), which runs in `npm test` without network.
 
 ## Privacy
 

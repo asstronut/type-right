@@ -9,6 +9,7 @@ Chrome MV3 extension (WXT, TypeScript, Vitest). Vocabulary: `GLOSSARY.md`. Detai
 - `lib/settings.ts` (Settings shape, site lists, provider-change rules) and `lib/store.ts` (`chrome.storage.local`).
 - `lib/slips.ts` (`Slip`, stable ids), `lib/slip-tally.ts` (Tally), `lib/messages.ts` (content↔background messages).
 - `entrypoints/{popup,options,consent}/`: extension pages.
+- `eval/llm/`: on-demand LLM prompt eval against the real API (`npm run eval:llm`). `run.ts` (the API run) is not part of `npm test`; `score.test.ts` (scoring, no network) is.
 
 Flow: textarea edit → checker → message → background → Engine → `Slip[]` → overlay.
 

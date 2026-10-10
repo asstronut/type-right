@@ -45,7 +45,7 @@ A sentence ending in `.`, `?` or `!`, or a line ended by a line break. Only thes
 _Avoid_: complete sentence
 
 **LLM health**:
-Whether a Field's text goes to the LLM: **active**, **lt-only** (the user chose not to send it) or **failing** (it should go but can't right now). The LLM badge shows it.
+Whether a Field's text goes to the LLM: **active**, **lt-only** (the user chose not to send it) or **failing** (it should go but can't right now). The LLM badge shows it. A failure is shared: when the LLM fails for one Field, every Field in every tab turns failing, and the next success turns them all active.
 
 ### Your choices
 

@@ -1,8 +1,16 @@
 import { makeSightingKey, type Slip } from './slips';
 import type { SlipSighting } from './slip-tally';
 import { LlmFailedError, RateLimitedError, type Engine, type LlmFailure } from './engine';
+import { createSharedLlmFailure, LLM_FAILURE_PAUSE_MS, type SharedLlmFailure } from './llm-failure';
 import type { LlmProviderId } from './llm-providers';
-import { isInDictionary, isLlmAllowed, isSiteDisabled, isSiteExcluded, type Settings } from './settings';
+import {
+  isInDictionary,
+  isLlmAllowed,
+  isSiteDisabled,
+  isSiteExcluded,
+  llmCredentials,
+  type Settings,
+} from './settings';
 
 export interface CheckEngines {
   languageTool: Engine;
@@ -31,7 +39,12 @@ export interface FieldCheckerOptions {
   site?: CheckSite;
   /** Called with the field's current Slips whenever a check changes them. */
   onChange(slips: Slip[]): void;
-  /** Called with the LLM health whenever an LLM check changes it. */
+  /**
+   * The LLM's last failure, shared with the other Fields in the tab; without
+   * it the field keeps its own.
+   */
+  llmFailure?: SharedLlmFailure;
+  /** Called with the LLM health whenever an LLM check, here or in another Field, changes it. */
   onLlmHealthChange?(health: LlmHealth): void;
   /**
    * Called with Slips this field hasn't reported before, once their sentence
@@ -76,8 +89,6 @@ const DEFAULT_LLM_DEBOUNCE_MS = 1500;
 const MAX_CACHED_SENTENCES = 500;
 const DEFAULT_RETRY_MS = 30_000;
 const MIN_RETRY_MS = 1_000;
-/** After any LLM failure, no LLM request is made for this long. */
-const LLM_FAILURE_PAUSE_MS = 60_000;
 /** LanguageTool's free tier rejects requests over 20k characters. */
 const MAX_REQUEST_CHARS = 20_000;
 
@@ -107,8 +118,20 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   const llmCache = new Map<string, Slip[]>();
   /** The LLM provider the cached results came from. */
   let llmCacheProvider: LlmProviderId | undefined;
-  /** The last LLM check's failure, and the provider and key it happened with. */
-  let llmFailure: { reason: LlmFailure; credentials: string } | undefined;
+  /** The LLM's last failure, and the provider and key it happened with; maybe shared with other Fields. */
+  const llmFailure = options.llmFailure ?? createSharedLlmFailure();
+  const stopWatchingLlmFailure = llmFailure.watch(() => {
+    if (disposed) return;
+    const health = llmHealth();
+    options.onLlmHealthChange?.(health);
+    // Slips held back for the LLM count now that it can't check their sentence.
+    if (health.state === 'failing') reportSightings(slips());
+    // The LLM works again, maybe after another field's check: no need to sit out this field's pause.
+    if (!llmFailure.get() && llmBlockedUntil > Date.now()) {
+      llmBlockedUntil = 0;
+      scheduleLlm(0);
+    }
+  });
   /** Ids of the Slips the user chose to ignore in this field. */
   const ignored = new Set<string>();
   /** Keys of the Slips already passed to `onSlipsSeen`. */
@@ -235,7 +258,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       llmCache.clear();
       llmCacheProvider = provider;
     }
-    if (llmFailure && llmFailure.credentials !== credentials()) {
+    const failure = llmFailure.get();
+    if (failure && failure.credentials !== credentials()) {
       // The user changed the key or provider, likely to fix the failure: try again now.
       setLlmFailure(undefined);
       llmBlockedUntil = 0;
@@ -262,8 +286,9 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         try {
           found = await llm.check(sentenceText);
         } catch (error) {
-          setLlmFailure(error instanceof LlmFailedError ? error.failure : 'bad-response');
-          llmBlockedUntil = Date.now() + LLM_FAILURE_PAUSE_MS;
+          const failed = error instanceof LlmFailedError ? error : new LlmFailedError('bad-response');
+          setLlmFailure(failed.failure);
+          llmBlockedUntil = Date.now() + (failed.retryAfterMs ?? LLM_FAILURE_PAUSE_MS);
           scheduleLlm(0);
           return;
         }
@@ -319,22 +344,19 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
       if (isSiteExcluded(options.site.hostname, settings)) return { state: 'lt-only', reason: 'excluded-site' };
       if (!settings.llmApiKey) return { state: 'failing', reason: 'no-key' };
     }
-    if (llmFailure && llmFailure.credentials === credentials()) return { state: 'failing', reason: llmFailure.reason };
+    const failure = llmFailure.get();
+    if (failure && failure.credentials === credentials()) return { state: 'failing', reason: failure.reason };
     return { state: 'active' };
   }
 
   function setLlmFailure(reason: LlmFailure | undefined): void {
-    if (reason === llmFailure?.reason) return;
-    llmFailure = reason && { reason, credentials: credentials() };
-    options.onLlmHealthChange?.(llmHealth());
-    // Slips held back for the LLM count now that it can't check their sentence.
-    if (reason) reportSightings(slips());
+    llmFailure.set(reason && { reason, credentials: credentials() });
   }
 
   /** Identifies the provider and key an LLM request is sent with. */
   function credentials(): string {
     const settings = options.site?.settings();
-    return settings ? `${settings.llmProvider}:${settings.llmApiKey}` : '';
+    return settings ? llmCredentials(settings) : '';
   }
 
   /** Keeps the cache bounded on long-lived fields by forgetting the oldest sentence first. */
@@ -345,6 +367,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
 
   function dispose(): void {
     disposed = true;
+    stopWatchingLlmFailure();
     if (timer) clearTimeout(timer);
     if (llmTimer) clearTimeout(llmTimer);
   }

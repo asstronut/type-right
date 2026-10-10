@@ -150,3 +150,8 @@ export function isLlmAllowed(hostname: string, settings: Settings): boolean {
     !isSiteDisabled(hostname, settings)
   );
 }
+
+/** Identifies the Provider and key an LLM request is sent with, so a failure can be tied to them. */
+export function llmCredentials(settings: Settings): string {
+  return `${settings.llmProvider}:${settings.llmApiKey}`;
+}

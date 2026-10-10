@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFieldChecker, type LlmHealth } from './checker';
+import { createSharedLlmFailure, type SharedLlmFailure } from './llm-failure';
+import { createLlmGate, type LlmGate } from './llm-gate';
 import { createLanguageToolEngine } from './engines/language-tool';
 import { createLlmEngine } from './engines/llm';
 import type { Slip } from './slips';
@@ -113,23 +115,37 @@ describe('createFieldChecker', () => {
   /** What the Popup would show for every field set up in the test. */
   let tally: SlipTally;
 
-  function setup(site?: { hostname: string; settings: Partial<Settings> }, withLlm = false) {
+  /**
+   * A field. With `shared`, its LLM checks go through the shared gate, as in
+   * the background worker, and it shares its tab's LLM failure.
+   */
+  function setup(
+    site?: { hostname: string; settings: Partial<Settings> },
+    withLlm = false,
+    shared?: { gate: LlmGate; failure: SharedLlmFailure },
+  ) {
     const languageTool = createLanguageToolEngine({
       apiUrl: 'https://api.languagetool.org',
       language: 'en-US',
     });
-    const llm = withLlm ? createLlmEngine(llmProvider, 'test-key') : undefined;
+    const settings = () => ({ ...DEFAULT_SETTINGS, llmProvider, ...site?.settings });
+    const llm = shared
+      ? { check: (text: string) => shared.gate.check(text, settings()) }
+      : withLlm
+        ? createLlmEngine(llmProvider, 'test-key')
+        : undefined;
+    /** The LLM health this field last reported, as its badge would show it. */
+    let fieldHealth: LlmHealth | undefined;
     const checker = createFieldChecker({
       engines: { languageTool, llm },
-      site: site && {
-        hostname: site.hostname,
-        settings: () => ({ ...DEFAULT_SETTINGS, llmProvider, ...site.settings }),
-      },
+      site: site && { hostname: site.hostname, settings },
+      llmFailure: shared?.failure,
       onChange: (slips) => {
         latest = slips;
       },
       onLlmHealthChange: (next) => {
         health = next;
+        fieldHealth = next;
       },
       onSlipsSeen: (seen) => {
         tally = addToTally(tally, seen);
@@ -150,6 +166,7 @@ describe('createFieldChecker', () => {
       },
       update: checker.update,
       llmHealth: checker.llmHealth,
+      badge: () => fieldHealth,
       ignore: checker.ignore,
       slips: checker.slips,
       forgetReported: checker.forgetReported,
@@ -936,6 +953,69 @@ describe('createFieldChecker', () => {
         await field.typeAndWait('I am agree with you. Bye.');
 
         expect(llmSent()).toEqual(['I am agree with you.', 'I am agree with you.', 'Bye.']);
+      });
+    });
+
+    describe('LLM failure shared by every Field', () => {
+      const allowed = { llmConsent: true, llmApiKey: 'test-key' };
+      const site = { hostname: 'github.com', settings: allowed };
+
+      /** One gate, as in the background worker, whose failures reach the tab as its broadcast would. */
+      function sharedLlm() {
+        const failure = createSharedLlmFailure();
+        const gate = createLlmGate({
+          engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
+          onFailureChange: (next) => failure.set(next),
+        });
+        return { gate, failure };
+      }
+
+      it('turns every Field failing at once, and the others ask the Provider nothing during the pause', async () => {
+        const shared = sharedLlm();
+        const first = setup(site, true, shared);
+        const second = setup(site, true, shared);
+        llmResponses.push(() => new Response('oops', { status: 500 }));
+
+        await first.typeAndWait('I am agree with you.');
+        expect(second.badge()).toEqual({ state: 'failing', reason: 'bad-response' });
+
+        await second.typeAndWait('Bye.');
+        await vi.advanceTimersByTimeAsync(55_000);
+        expect(llmSent()).toEqual(['I am agree with you.']);
+        expect(second.badge()).toEqual({ state: 'failing', reason: 'bad-response' });
+      });
+
+      it('turns every Field active again after the next success, and checks the waiting sentences', async () => {
+        const shared = sharedLlm();
+        const first = setup(site, true, shared);
+        const second = setup(site, true, shared);
+        llmResponses.push(() => new Response('oops', { status: 500 }));
+        await first.typeAndWait('I am agree with you.');
+        await vi.advanceTimersByTimeAsync(30_000);
+        await second.typeAndWait('Bye.');
+
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(first.badge()).toEqual({ state: 'active' });
+        expect(second.badge()).toEqual({ state: 'active' });
+        expect(llmSent()).toEqual(['I am agree with you.', 'I am agree with you.', 'Bye.']);
+      });
+
+      it('retries a refused sentence when the shared pause ends, not a full pause later', async () => {
+        const shared = sharedLlm();
+        const first = setup(site, true, shared);
+        const second = setup(site, true, shared);
+        llmResponses.push(() => new Response('oops', { status: 500 }));
+        await first.typeAndWait('I am agree with you.');
+        // Nothing left for the first field to retry.
+        await first.typeAndWait('I am agree with you');
+        await vi.advanceTimersByTimeAsync(30_000);
+        await second.typeAndWait('Bye.');
+
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(llmSent()).toEqual(['I am agree with you.', 'Bye.']);
+        expect(second.badge()).toEqual({ state: 'active' });
       });
     });
 

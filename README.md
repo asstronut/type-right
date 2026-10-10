@@ -49,6 +49,7 @@ For development with hot reload, run `npm run dev`.
 | `npm test` | Run tests once (Vitest) |
 | `npm run test:watch` | Tests in watch mode |
 | `npm run serve:testpage` | Serve `test-page/` on port 5173 |
+| `npm run eval:llm [gemini\|glm]` | Score the LLM prompt on `eval/llm/fixture.ts` (real API; key in `GEMINI_API_KEY` or `Z_AI_API_KEY`, env or `.env.local`) |
 
 ## Architecture
 

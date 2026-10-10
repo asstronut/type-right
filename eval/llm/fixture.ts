@@ -57,6 +57,12 @@ export const FIXTURE: FixtureCase[] = [
     sentence: 'Thank you for your fast response, I will check it soon and revert back to you.',
     expected: [{ quote: 'revert back to you', correction: 'get back to you' }],
   },
+  { sentence: 'Please do the needful by Monday.', expected: [{ quote: 'do the needful', correction: 'take care of this' }] },
+  {
+    sentence: 'I want to open the discussion about salary with my boss.',
+    expected: [{ quote: 'open the discussion about', correction: 'bring up' }],
+  },
+  { sentence: 'The price of this laptop is very expensive.', expected: [{ quote: 'very expensive', correction: 'very high' }] },
 
   // Typed for real; the LLM gave several corrections for the same words.
   {

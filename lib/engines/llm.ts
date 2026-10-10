@@ -166,6 +166,6 @@ function occurrences(sentence: string, quote: string): number[] {
   return [...all.filter(isWholeWord), ...all.filter((at) => !isWholeWord(at))];
 }
 
-function isWordChar(char: string | undefined): boolean {
+export function isWordChar(char: string | undefined): boolean {
   return char !== undefined && /[\p{L}\p{N}_'’]/u.test(char);
 }

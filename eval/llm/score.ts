@@ -1,3 +1,5 @@
+import { isWordChar } from '../../lib/engines/llm';
+
 /** A Slip the LLM should find, as the words it covers. */
 export interface ExpectedSlip {
   /** The wrong words, copied from the sentence. Matched as whole words. */
@@ -66,8 +68,4 @@ function wholeWordOccurrences(sentence: string, quote: string): number[] {
     }
   }
   return all;
-}
-
-function isWordChar(char: string | undefined): boolean {
-  return char !== undefined && /[\p{L}\p{N}_'’]/u.test(char);
 }

@@ -14,7 +14,7 @@ function backgroundEngine(type: CheckMessage['type'], name: string): Engine {
     async check(text) {
       const message: CheckMessage = { type, text };
       const response = (await browser.runtime.sendMessage(message)) as CheckResponse | undefined;
-      if (response?.ok) return response.errors;
+      if (response?.ok) return response.slips;
       if (response?.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
       if (response?.reason === 'llm-failed') throw new LlmFailedError(response.failure);
       throw new Error(`${name} check failed`);
@@ -35,9 +35,9 @@ interface FieldState {
 interface Running {
   /** Removes all trace of Type Right from the page. */
   stop(): void;
-  /** Re-reads every field's LLM health and Errors, after a Settings change (e.g. the dictionary). */
+  /** Re-reads every field's LLM health and Slips, after a Settings change (e.g. the dictionary). */
   refreshFields(): void;
-  /** Lets every field count its Errors again, after the counts are reset. */
+  /** Lets every field count its Slips again, after the counts are reset. */
   forgetReported(): void;
 }
 
@@ -64,17 +64,17 @@ export default defineContentScript({
         const checker = createFieldChecker({
           engines,
           site,
-          onChange: (errors) => overlay.render(field.value, errors),
+          onChange: (slips) => overlay.render(field.value, slips),
           onLlmHealthChange: (health) => overlay.setLlmHealth(health),
-          onErrorsSeen: (sightings) => {
-            const message: TallyMessage = { type: 'record-errors', sightings };
+          onSlipsSeen: (sightings) => {
+            const message: TallyMessage = { type: 'record-slips', sightings };
             void browser.runtime.sendMessage(message).catch(() => {});
           },
         });
         overlay.setLlmHealth(checker.llmHealth());
         fields.set(field, { overlay, checker });
         hover.watch(field, overlay, {
-          ignore: (error) => checker.ignore(error.id),
+          ignore: (slip) => checker.ignore(slip.id),
           // Saving notifies every tab's watcher, which re-renders all fields without the word.
           addToDictionary: (word) => void store.addToDictionary(word),
         }, listeners.signal);
@@ -123,7 +123,7 @@ export default defineContentScript({
         refreshFields() {
           fields.forEach(({ overlay, checker }, field) => {
             overlay.setLlmHealth(checker.llmHealth());
-            overlay.render(field.value, checker.errors());
+            overlay.render(field.value, checker.slips());
           });
         },
         forgetReported() {
@@ -149,10 +149,10 @@ export default defineContentScript({
       settings = next;
       apply();
       // Consent, the key or the site lists may have changed what the LLM badge
-      // should say, and the dictionary which Errors to show.
+      // should say, and the dictionary which Slips to show.
       running?.refreshFields();
     });
-    // Only a reset empties the tally; Errors still on screen count again on their field's next check.
+    // Only a reset empties the tally; Slips still on screen count again on their field's next check.
     store.watchTally((tally) => {
       if (!tally.seen.length) running?.forgetReported();
     });

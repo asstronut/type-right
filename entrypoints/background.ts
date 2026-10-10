@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { LlmFailedError, RateLimitedError } from '../lib/engine';
 import { createLlmEngine } from '../lib/engines/llm';
 import { createLanguageToolEngine } from '../lib/engines/language-tool';
-import type { CheckError } from '../lib/errors';
+import type { Slip } from '../lib/slips';
 import type { CheckMessage, CheckResponse, TallyMessage } from '../lib/messages';
 import { isLlmAllowed, languageToolConfig, type Settings } from '../lib/settings';
 import { store } from '../lib/store';
@@ -23,7 +23,7 @@ export default defineBackground(() => {
   }
 
   browser.runtime.onMessage.addListener((message: CheckMessage | TallyMessage, sender) => {
-    if (message?.type === 'record-errors') return queueTallyUpdate(() => store.recordErrors(message.sightings));
+    if (message?.type === 'record-slips') return queueTallyUpdate(() => store.recordSlips(message.sightings));
     if (message?.type === 'reset-tally') return queueTallyUpdate(() => store.resetTally());
     if (message?.type === 'check-field') {
       return respond((settings) => createLanguageToolEngine(languageToolConfig(settings)).check(message.text));
@@ -40,12 +40,12 @@ export default defineBackground(() => {
 });
 
 /** Settings are read per check so a change on the Options page applies to the next keystroke. */
-function respond(check: (settings: Settings) => Promise<CheckError[]>): Promise<CheckResponse> {
+function respond(check: (settings: Settings) => Promise<Slip[]>): Promise<CheckResponse> {
   return store
     .getSettings()
     .then(check)
     .then(
-      (errors): CheckResponse => ({ ok: true, errors }),
+      (slips): CheckResponse => ({ ok: true, slips }),
       (error): CheckResponse => {
         if (error instanceof RateLimitedError) {
           return { ok: false, reason: 'rate-limited', retryAfterMs: error.retryAfterMs };

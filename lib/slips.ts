@@ -1,33 +1,33 @@
-export const ERROR_KINDS = ['spelling', 'grammar', 'wording'] as const;
+export const SLIP_KINDS = ['spelling', 'grammar', 'wording'] as const;
 
-export type ErrorKind = (typeof ERROR_KINDS)[number];
+export type SlipKind = (typeof SLIP_KINDS)[number];
 
-export type ErrorSource = 'languagetool' | 'llm';
+export type SlipSource = 'languagetool' | 'llm';
 
-export interface CheckError {
+export interface Slip {
   id: string;
   start: number;
   end: number;
-  kind: ErrorKind;
+  kind: SlipKind;
   type: string;
   explanation: string;
   suggestions: string[];
-  source: ErrorSource;
+  source: SlipSource;
 }
 
 /**
- * Stable across re-checks of the same mistake: derived from the kind and the
+ * Stable across re-checks of the same Slip: derived from the kind and the
  * flagged text, not its position, so the id survives the text shifting around it.
  */
-export function makeErrorId(kind: ErrorKind, spanText: string): string {
+export function makeSlipId(kind: SlipKind, spanText: string): string {
   return `${kind}:${hash(spanText.toLowerCase())}`;
 }
 
 /**
- * Tells distinct Errors apart for the Popup's counts: the same mistake in the
+ * Tells distinct Slips apart for the Popup's counts: the same Slip in the
  * same sentence keeps its key across re-checks, fields and page loads.
  */
-export function makeSightingKey(kind: ErrorKind, sentenceText: string, spanText: string): string {
+export function makeSightingKey(kind: SlipKind, sentenceText: string, spanText: string): string {
   return `${kind}:${hash(sentenceText)}:${hash(spanText.toLowerCase())}`;
 }
 

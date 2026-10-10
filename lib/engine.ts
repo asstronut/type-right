@@ -1,7 +1,7 @@
-import type { CheckError } from './errors';
+import type { Slip } from './slips';
 
 export interface Engine {
-  check(text: string): Promise<CheckError[]>;
+  check(text: string): Promise<Slip[]>;
 }
 
 /** The engine's provider asked us to slow down; the check should be retried later, silently. */

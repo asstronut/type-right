@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
-import { ERROR_KINDS, type ErrorKind } from '../../lib/errors';
-import type { ErrorTally } from '../../lib/error-tally';
+import { SLIP_KINDS, type SlipKind } from '../../lib/slips';
+import type { SlipTally } from '../../lib/slip-tally';
 import type { TallyMessage } from '../../lib/messages';
 import { isSiteDisabled, isSiteExcluded, normalizeSite, type Settings } from '../../lib/settings';
 import { store } from '../../lib/store';
@@ -13,11 +13,11 @@ const exclude = document.querySelector<HTMLButtonElement>('#exclude')!;
 const disable = document.querySelector<HTMLButtonElement>('#disable')!;
 const siteHint = document.querySelector<HTMLParagraphElement>('#siteHint')!;
 
-const KIND_LABELS: Record<ErrorKind, string> = { spelling: 'Spelling', grammar: 'Grammar', wording: 'Wording' };
+const KIND_LABELS: Record<SlipKind, string> = { spelling: 'Spelling', grammar: 'Grammar', wording: 'Wording' };
 
 /** Each kind with its total, then its type labels with their counts; kinds and types most frequent first. */
-function renderTally(tally: ErrorTally): void {
-  const kinds = ERROR_KINDS.map((kind) => {
+function renderTally(tally: SlipTally): void {
+  const kinds = SLIP_KINDS.map((kind) => {
     const byType = Object.entries(tally.counts[kind] ?? {}).sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
     return { kind, byType, total: byType.reduce((sum, [, n]) => sum + n, 0) };
   })

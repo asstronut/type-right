@@ -1,6 +1,6 @@
 import type { LlmHealth } from '../../lib/checker';
 import type { LlmFailure } from '../../lib/engine';
-import type { CheckError } from '../../lib/errors';
+import type { Slip } from '../../lib/slips';
 
 const MIRROR_PROPERTIES = [
   'box-sizing',
@@ -30,7 +30,7 @@ const MIRROR_PROPERTIES = [
   'tab-size',
 ] as const;
 
-export const KIND_COLORS: Record<CheckError['kind'], string> = {
+export const KIND_COLORS: Record<Slip['kind'], string> = {
   spelling: '#e11d48',
   grammar: '#2563eb',
   wording: '#7c3aed',
@@ -71,8 +71,8 @@ const BADGE_INSET_PX = { right: 18, bottom: 4 };
 /** The underline is drawn just below the glyphs; count it as part of the hover target. */
 const UNDERLINE_HIT_SLOP_PX = 4;
 
-export interface ErrorHit {
-  error: CheckError;
+export interface SlipHit {
+  slip: Slip;
   /** The box of the underlined line under the pointer, for placing the Hover card. */
   rect: DOMRect;
 }
@@ -88,7 +88,7 @@ export class FieldOverlay {
   private readonly el: HTMLDivElement;
   /** Says whether the field's text goes to the LLM; hovering it tells why. */
   private readonly badge: HTMLDivElement;
-  private spans: { span: HTMLSpanElement; error: CheckError }[] = [];
+  private spans: { span: HTMLSpanElement; slip: Slip }[] = [];
   private readonly listeners = new AbortController();
   private readonly resizeObserver: ResizeObserver;
 
@@ -129,10 +129,10 @@ export class FieldOverlay {
     this.resizeObserver.observe(field);
   }
 
-  render(text: string, errors: CheckError[]): void {
+  render(text: string, slips: Slip[]): void {
     if (this.field.value !== text) return; // a newer keystroke has already superseded this response
     this.reposition();
-    this.renderSpans(text, errors);
+    this.renderSpans(text, slips);
   }
 
   setLlmHealth(health: LlmHealth): void {
@@ -150,17 +150,17 @@ export class FieldOverlay {
   }
 
   /**
-   * The rendered Error under a viewport point, if any. The overlay ignores the
+   * The rendered Slip under a viewport point, if any. The overlay ignores the
    * pointer (so the textarea keeps working), which is why hovering is done by
    * hit-testing its spans rather than by listening on them.
    */
-  errorAt(x: number, y: number): ErrorHit | undefined {
+  slipAt(x: number, y: number): SlipHit | undefined {
     const visible = this.el.getBoundingClientRect();
     if (x < visible.left || x > visible.right || y < visible.top || y > visible.bottom) return undefined;
-    for (const { span, error } of this.spans) {
+    for (const { span, slip } of this.spans) {
       for (const rect of span.getClientRects()) {
         if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom + UNDERLINE_HIT_SLOP_PX) {
-          return { error, rect };
+          return { slip, rect };
         }
       }
     }
@@ -214,28 +214,28 @@ export class FieldOverlay {
     this.el.scrollLeft = this.field.scrollLeft;
   }
 
-  private renderSpans(text: string, errors: CheckError[]): void {
+  private renderSpans(text: string, slips: Slip[]): void {
     this.el.replaceChildren();
     this.spans = [];
-    const sorted = [...errors].sort((a, b) => a.start - b.start);
+    const sorted = [...slips].sort((a, b) => a.start - b.start);
 
     let cursor = 0;
-    for (const error of sorted) {
-      if (error.start < cursor || error.end > text.length || error.end <= error.start) continue;
-      if (error.start > cursor) {
-        this.el.appendChild(document.createTextNode(text.slice(cursor, error.start)));
+    for (const slip of sorted) {
+      if (slip.start < cursor || slip.end > text.length || slip.end <= slip.start) continue;
+      if (slip.start > cursor) {
+        this.el.appendChild(document.createTextNode(text.slice(cursor, slip.start)));
       }
       const span = document.createElement('span');
-      span.textContent = text.slice(error.start, error.end);
+      span.textContent = text.slice(slip.start, slip.end);
       span.style.textDecorationLine = 'underline';
       span.style.textDecorationStyle = 'solid';
-      span.style.textDecorationColor = KIND_COLORS[error.kind];
+      span.style.textDecorationColor = KIND_COLORS[slip.kind];
       span.style.textDecorationThickness = '3px';
       // Default "auto" breaks the line around descenders (y, g, p...), which looks like a cut-off underline.
       span.style.textDecorationSkipInk = 'none';
       this.el.appendChild(span);
-      this.spans.push({ span, error });
-      cursor = error.end;
+      this.spans.push({ span, slip });
+      cursor = slip.end;
     }
     // A trailing newline adds an empty line in a textarea but not in a div; the
     // zero-width char keeps both the same scroll height.

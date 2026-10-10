@@ -1,4 +1,4 @@
-import { ERROR_KINDS, makeErrorId, type CheckError, type ErrorKind } from '../errors';
+import { SLIP_KINDS, makeSlipId, type Slip, type SlipKind } from '../slips';
 import { LlmFailedError, type Engine } from '../engine';
 import { LLM_PROVIDERS, type LlmProvider, type LlmProviderId } from '../llm-providers';
 
@@ -21,9 +21,9 @@ interface ChatCompletion {
   choices?: { message?: { content?: string } }[];
 }
 
-interface LlmError {
+interface LlmSlip {
   quote: string;
-  kind: ErrorKind;
+  kind: SlipKind;
   type: string;
   explanation: string;
   correction: string;
@@ -39,7 +39,7 @@ const TIMEOUT_MS = 8_000;
 export function createLlmEngine(providerId: LlmProviderId, apiKey: string): Engine {
   const provider = LLM_PROVIDERS[providerId];
   return {
-    async check(sentence: string): Promise<CheckError[]> {
+    async check(sentence: string): Promise<Slip[]> {
       const timeout = new AbortController();
       const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS);
       try {
@@ -61,7 +61,7 @@ async function checkWithin(
   apiKey: string,
   sentence: string,
   signal: AbortSignal,
-): Promise<CheckError[]> {
+): Promise<Slip[]> {
   let response = await request(provider, apiKey, provider.model, sentence, signal);
   if (await provider.isOverloaded(response)) {
     response = await request(provider, apiKey, provider.fallbackModel, sentence, signal);
@@ -75,7 +75,7 @@ async function checkWithin(
 
   const choices = ((await response.json()) as ChatCompletion | null)?.choices;
   if (!Array.isArray(choices)) throw new LlmFailedError('bad-response');
-  return locateErrors(sentence, parseErrors(choices[0]?.message?.content));
+  return locateSlips(sentence, parseSlips(choices[0]?.message?.content));
 }
 
 function request(
@@ -102,8 +102,8 @@ function request(
   });
 }
 
-/** The well-formed Errors in the model's reply; a reply that isn't valid JSON yields none. */
-function parseErrors(content: string | undefined): LlmError[] {
+/** The well-formed Slips in the model's reply; a reply that isn't valid JSON yields none. */
+function parseSlips(content: string | undefined): LlmSlip[] {
   if (!content) return [];
   let data: unknown;
   try {
@@ -111,15 +111,16 @@ function parseErrors(content: string | undefined): LlmError[] {
   } catch {
     return [];
   }
-  const errors = (data as { errors?: unknown } | null)?.errors;
-  if (!Array.isArray(errors)) return [];
-  return errors.filter(
-    (e): e is LlmError =>
+  // The prompt asks for `errors`, the word the model knows best; they are Slips here.
+  const slips = (data as { errors?: unknown } | null)?.errors;
+  if (!Array.isArray(slips)) return [];
+  return slips.filter(
+    (e): e is LlmSlip =>
       typeof e === 'object' &&
       e !== null &&
       typeof e.quote === 'string' &&
       e.quote.length > 0 &&
-      (ERROR_KINDS as readonly unknown[]).includes(e.kind) &&
+      (SLIP_KINDS as readonly unknown[]).includes(e.kind) &&
       typeof e.type === 'string' &&
       typeof e.explanation === 'string' &&
       typeof e.correction === 'string',
@@ -127,25 +128,25 @@ function parseErrors(content: string | undefined): LlmError[] {
 }
 
 /**
- * Places each Error at its quoted text in the sentence. The same quote listed
+ * Places each Slip at its quoted text in the sentence. The same quote listed
  * more than once takes successive occurrences; quotes that aren't found are dropped.
  */
-function locateErrors(sentence: string, errors: LlmError[]): CheckError[] {
+function locateSlips(sentence: string, slips: LlmSlip[]): Slip[] {
   const used = new Map<string, number>();
-  return errors.flatMap((error) => {
-    const nth = used.get(error.quote) ?? 0;
-    used.set(error.quote, nth + 1);
-    const start = occurrences(sentence, error.quote)[nth];
+  return slips.flatMap((slip) => {
+    const nth = used.get(slip.quote) ?? 0;
+    used.set(slip.quote, nth + 1);
+    const start = occurrences(sentence, slip.quote)[nth];
     if (start === undefined) return [];
     return [
       {
-        id: makeErrorId(error.kind, error.quote),
+        id: makeSlipId(slip.kind, slip.quote),
         start,
-        end: start + error.quote.length,
-        kind: error.kind,
-        type: error.type,
-        explanation: error.explanation,
-        suggestions: [error.correction],
+        end: start + slip.quote.length,
+        kind: slip.kind,
+        type: slip.type,
+        explanation: slip.explanation,
+        suggestions: [slip.correction],
         source: 'llm' as const,
       },
     ];

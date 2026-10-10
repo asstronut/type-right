@@ -15,9 +15,15 @@ export class RateLimitedError extends Error {
 /** Why the LLM could not check a sentence. */
 export type LlmFailure = 'no-key' | 'quota' | 'network' | 'timeout' | 'bad-response';
 
-/** The LLM request failed for a known reason, shown to the user on the field's LLM badge. */
+/**
+ * The LLM request failed for a known reason, shown to the user on the field's
+ * LLM badge. `retryAfterMs` says when the LLM may be asked again, if known.
+ */
 export class LlmFailedError extends Error {
-  constructor(readonly failure: LlmFailure) {
+  constructor(
+    readonly failure: LlmFailure,
+    readonly retryAfterMs?: number,
+  ) {
     super(`LLM check failed: ${failure}`);
     this.name = 'LlmFailedError';
   }

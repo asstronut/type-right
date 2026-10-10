@@ -4,7 +4,15 @@ import { FieldOverlay } from './field-overlay';
 import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
 import { LlmFailedError, RateLimitedError, type Engine } from '../../lib/engine';
-import type { CheckMessage, CheckResponse, TallyMessage } from '../../lib/messages';
+import { createSharedLlmFailure } from '../../lib/llm-failure';
+import type {
+  CheckMessage,
+  CheckResponse,
+  LlmFailureMessage,
+  LlmFailureQuery,
+  LlmFailureResponse,
+  TallyMessage,
+} from '../../lib/messages';
 import { isSiteDisabled } from '../../lib/settings';
 import { store } from '../../lib/store';
 
@@ -16,7 +24,7 @@ function backgroundEngine(type: CheckMessage['type'], name: string): Engine {
       const response = (await browser.runtime.sendMessage(message)) as CheckResponse | undefined;
       if (response?.ok) return response.slips;
       if (response?.reason === 'rate-limited') throw new RateLimitedError(response.retryAfterMs);
-      if (response?.reason === 'llm-failed') throw new LlmFailedError(response.failure);
+      if (response?.reason === 'llm-failed') throw new LlmFailedError(response.failure, response.retryAfterMs);
       throw new Error(`${name} check failed`);
     },
   };
@@ -48,6 +56,24 @@ export default defineContentScript({
     let settings = await store.getSettings();
     const site = { hostname, settings: () => settings };
 
+    // One LLM failure for every field on the page, kept in step with the
+    // background worker so a failure in any tab turns every badge red.
+    const llmFailure = createSharedLlmFailure();
+    /** Set once a broadcast arrives, which is newer than the answer to the start-up query. */
+    let heardBroadcast = false;
+    browser.runtime.onMessage.addListener((message: LlmFailureMessage) => {
+      if (message?.type !== 'llm-failure') return;
+      heardBroadcast = true;
+      llmFailure.set(message.failure ?? undefined);
+    });
+    const query: LlmFailureQuery = { type: 'get-llm-failure' };
+    void browser.runtime.sendMessage(query).then(
+      (failure: LlmFailureResponse | undefined) => {
+        if (!heardBroadcast) llmFailure.set(failure ?? undefined);
+      },
+      () => {},
+    );
+
     const hover = new HoverController();
     /** Set while Type Right is running on this page. */
     let running: Running | null = null;
@@ -64,6 +90,7 @@ export default defineContentScript({
         const checker = createFieldChecker({
           engines,
           site,
+          llmFailure,
           onChange: (slips) => overlay.render(field.value, slips),
           onLlmHealthChange: (health) => overlay.setLlmHealth(health),
           onSlipsSeen: (sightings) => {

@@ -6,6 +6,7 @@ Chrome MV3 extension (WXT, TypeScript, Vitest). Vocabulary: `GLOSSARY.md`. Detai
 - `lib/checker.ts`: per-Field core (edit diff, paragraph re-check, Finished-sentence LLM scheduling + cache, LT/LLM merge, Ignore here, Tally reporting). Biggest file; tests in `checker.test.ts`.
 - `entrypoints/background.ts`: runs the Engines (all network calls, API key stays here) and serializes Tally writes.
 - `lib/engine.ts`, `lib/engines/{language-tool,llm}.ts`, `lib/llm-providers.ts`: the Engine interface, adapters and Provider configs.
+- `lib/llm-gate.ts` (background: shared LLM failure pause, refuses checks while paused) and `lib/llm-failure.ts` (the tab's shared failure, which every Field's LLM health reads).
 - `lib/settings.ts` (Settings shape, site lists, provider-change rules) and `lib/store.ts` (`chrome.storage.local`).
 - `lib/slips.ts` (`Slip`, stable ids), `lib/slip-tally.ts` (Tally), `lib/messages.ts` (content↔background messages).
 - `entrypoints/{popup,options,consent}/`: extension pages.

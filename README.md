@@ -53,9 +53,12 @@ For development with hot reload, run `npm run dev`.
 ## Architecture
 
 ```
-content script ──check-field msg────▶ background worker ──POST /v2/check──────────▶ LanguageTool
- (textarea + overlay + checker) ─check-sentence msg─▶ (Engine → Slip[])      ──POST chat/completions──▶ GLM (Z.ai)
-                                                                                                         or Gemini (Google)
+content script                    background worker
+(textarea, overlay, checker)      (Engine -> Slip[])
+
+  --check-field msg------->         --POST /v2/check--------->  LanguageTool
+  --check-sentence msg---->         --POST chat/completions-->  GLM (Z.ai) or Gemini (Google)
+  <-----------Slip[]-------
 ```
 
 The LLM leg goes to whichever provider is selected in Settings; both take the same OpenAI-compatible chat completions request.

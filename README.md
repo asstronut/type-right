@@ -1,6 +1,6 @@
 # Type Right
 
-Personal Chrome extension that checks your English as you type, in any `<textarea>`, with no "check" button. It underlines each mistake (a Slip, see [GLOSSARY.md](GLOSSARY.md)) in place, colored by kind. The goal is to **learn**, not to be auto-corrected: for each one you'll see what kind it is and why it's wrong, and you fix it yourself.
+Personal Chrome extension that checks your English as you type, in any `<textarea>`, with no "check" button. It underlines each slip (a spelling, grammar or wording mistake; see [GLOSSARY.md](GLOSSARY.md)) in place, colored by kind. The goal is to **learn**, not to be auto-corrected: for each one you'll see what kind it is and why it's wrong, and you fix it yourself.
 
 Full v1 spec: [issue #1](https://github.com/asstronut/type-right/issues/1).
 
@@ -9,7 +9,7 @@ Full v1 spec: [issue #1](https://github.com/asstronut/type-right/issues/1).
 ## How it will work (v1)
 
 - **Underlines by kind:** spelling (red), grammar (blue), unnatural wording (purple).
-- **Hover card** (~300 ms): the Slip's type, short explanation in simple English, corrected text hidden behind "Show answer". "Apply" only for spelling; grammar and wording you retype. "Ignore here" hides that mistake everywhere in the field until the page reloads; "Add to dictionary" (spelling only) stops a word being flagged anywhere, and the Options page lists the words with Remove buttons.
+- **Hover card** (~300 ms): the Slip's type, short explanation in simple English, corrected text hidden behind "Show answer". "Apply" only for spelling; grammar and wording you retype. "Ignore here" hides that Slip everywhere in the field until the page reloads; "Add to dictionary" (spelling only) stops a word being flagged anywhere, and the Options page lists the words with Remove buttons.
 - **Two engines:**
   - [LanguageTool](https://languagetool.org) (free public API): fast spelling and grammar underlines after you pause.
   - **LLM**, your choice of provider on the Options page: **GLM** (`glm-4.7-flash`, Zhipu AI / Z.ai; the default) or **Google Gemini** (`gemini-3.8-flash`). Runs on finished sentences, catches unnatural wording, better explanations.
@@ -73,7 +73,7 @@ Network calls run in the background service worker so API keys never reach page 
 - `lib/llm-providers.ts`: one description per LLM provider: endpoint, models, extra request fields, overload detection, disclosure text.
   - GLM: `glm-4.7-flash`, falls back to `glm-4.5-flash` on HTTP 429 with code `1305`; sends `thinking: disabled`.
   - Gemini: `gemini-3.8-flash`, falls back to `gemini-3.5-flash-lite` on HTTP 503; HTTP 429 is a rate limit; sends `reasoning_effort: low`.
-- `lib/slips.ts`: `Slip` shape and stable Slip ids (derived from kind + flagged text, not position, so re-flagging the same mistake yields the same id), plus the Popup's counting key (kind + sentence text + flagged text).
+- `lib/slips.ts`: `Slip` shape and stable Slip ids (derived from kind + flagged text, not position, so re-flagging the same Slip yields the same id), plus the Popup's counting key (kind + sentence text + flagged text).
 - `lib/slip-tally.ts`: the Popup's counts, stored in `chrome.storage.local`. The checker reports each Slip once its sentence is finished (ends in `.`, `?`, `!` or a line break) and, while the LLM is active, after the LLM has checked it; each distinct key is counted once. Tested in [checker.test.ts](lib/checker.test.ts) and [slip-tally.test.ts](lib/slip-tally.test.ts).
 
 ## Privacy

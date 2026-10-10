@@ -229,9 +229,9 @@ function renderCard({ slip, onApply, onIgnore, onAddToDictionary }: HoverCardCon
   card.appendChild(showAnswer);
 
   const actions = el('div', 'actions');
-  actions.appendChild(actionButton('Ignore here', 'Hide this mistake everywhere in this field until the page reloads', onIgnore));
+  actions.appendChild(actionButton('Ignore here', 'Hide this slip everywhere in this field until the page reloads', onIgnore));
   if (onAddToDictionary) {
-    actions.appendChild(actionButton('Add to dictionary', 'Never flag this word as a spelling mistake again', onAddToDictionary));
+    actions.appendChild(actionButton('Add to dictionary', 'Never flag this word as a spelling slip again', onAddToDictionary));
   }
   card.appendChild(actions);
   return card;

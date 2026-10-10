@@ -1,4 +1,4 @@
-# Mirrors the issue template in mattpocock-skills 1.2.3 (to-tickets). Re-check sections when the plugin updates.
+# Mirrors the issue template in mattpocock-skills 1.3.1 (to-tickets). Re-check sections when the plugin updates.
 name: Ticket
 description: One buildable slice of work, usually part of a spec. Same shape as /to-tickets.
 labels: [needs-triage]
@@ -28,4 +28,5 @@ body:
     id: blocked-by
     attributes:
       label: Blocked by
+      description: Leave empty when blockers are set as native issue dependencies.
       value: None (can start immediately)

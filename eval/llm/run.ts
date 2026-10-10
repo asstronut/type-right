@@ -2,9 +2,9 @@
  * Runs the fixture through the real LLM and prompt and prints recall and
  * false positives. Not part of `npm test`: it needs an API key and network.
  *
- *   npm run eval:llm [gemini|glm]
+ *   npm run eval:llm [provider id, default gemini]
  *
- * The key is read from GEMINI_API_KEY or Z_AI_API_KEY, in the environment or `.env.local`.
+ * The key is read from the provider's variable in KEY_VARIABLES, in the environment or `.env.local`.
  */
 import { LlmFailedError } from '../../lib/engine';
 import { createLlmEngine } from '../../lib/engines/llm';
@@ -13,6 +13,7 @@ import type { Slip } from '../../lib/slips';
 import { FIXTURE } from './fixture';
 import { scoreCase } from './score';
 
+/** The environment variable holding each provider's API key. */
 const KEY_VARIABLES: Record<LlmProviderId, string> = { gemini: 'GEMINI_API_KEY', glm: 'Z_AI_API_KEY' };
 /** How long to wait before retrying when the key's quota runs out, and how often. */
 const QUOTA_WAIT_MS = 30_000;

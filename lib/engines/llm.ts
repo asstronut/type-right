@@ -158,14 +158,31 @@ function locateSlips(sentence: string, slips: LlmSlip[]): Slip[] {
  * first, so `is` is found as a word rather than inside `This`.
  */
 function occurrences(sentence: string, quote: string): number[] {
-  const all: number[] = [];
-  for (let at = sentence.indexOf(quote); at !== -1; at = sentence.indexOf(quote, at + 1)) all.push(at);
-  const isWholeWord = (at: number) =>
-    !(isWordChar(quote[0]) && isWordChar(sentence[at - 1])) &&
-    !(isWordChar(quote.at(-1)) && isWordChar(sentence[at + quote.length]));
-  return [...all.filter(isWholeWord), ...all.filter((at) => !isWholeWord(at))];
+  const all = allOccurrences(sentence, quote);
+  return [
+    ...all.filter((at) => isWholeWord(sentence, quote, at)),
+    ...all.filter((at) => !isWholeWord(sentence, quote, at)),
+  ];
 }
 
-export function isWordChar(char: string | undefined): boolean {
+/** Where `quote` appears in `sentence` as whole words, in order. */
+export function wholeWordOccurrences(sentence: string, quote: string): number[] {
+  return allOccurrences(sentence, quote).filter((at) => isWholeWord(sentence, quote, at));
+}
+
+function allOccurrences(sentence: string, quote: string): number[] {
+  const all: number[] = [];
+  for (let at = sentence.indexOf(quote); at !== -1; at = sentence.indexOf(quote, at + 1)) all.push(at);
+  return all;
+}
+
+function isWholeWord(sentence: string, quote: string, at: number): boolean {
+  return (
+    !(isWordChar(quote[0]) && isWordChar(sentence[at - 1])) &&
+    !(isWordChar(quote.at(-1)) && isWordChar(sentence[at + quote.length]))
+  );
+}
+
+function isWordChar(char: string | undefined): boolean {
   return char !== undefined && /[\p{L}\p{N}_'’]/u.test(char);
 }

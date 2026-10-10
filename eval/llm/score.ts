@@ -1,4 +1,4 @@
-import { isWordChar } from '../../lib/engines/llm';
+import { wholeWordOccurrences } from '../../lib/engines/llm';
 
 /** A Slip the LLM should find, as the words it covers. */
 export interface ExpectedSlip {
@@ -56,16 +56,4 @@ export function scoreCase(fixture: FixtureCase, reported: Span[]): CaseScore {
 
 function overlaps(a: Span, b: Span): boolean {
   return a.start < b.end && b.start < a.end;
-}
-
-function wholeWordOccurrences(sentence: string, quote: string): number[] {
-  const all: number[] = [];
-  for (let at = sentence.indexOf(quote); at !== -1; at = sentence.indexOf(quote, at + 1)) {
-    const before = sentence[at - 1];
-    const after = sentence[at + quote.length];
-    if (!(isWordChar(quote[0]) && isWordChar(before)) && !(isWordChar(quote.at(-1)) && isWordChar(after))) {
-      all.push(at);
-    }
-  }
-  return all;
 }

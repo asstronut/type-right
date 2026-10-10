@@ -18,7 +18,7 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 
 ## Opening a pull request
 
-Use `.github/PULL_REQUEST_TEMPLATE.md` for the body. `gh pr create --body` skips the template, so copy its sections (Closes, What, Testing, Not done / follow-ups, Checklist) and fill them in. Tick only the checklist items you actually ran.
+Use `.github/PULL_REQUEST_TEMPLATE.md` for the body. `gh pr create --body` skips the template, so copy its sections (Closes, Summary, Evidence, Merge Danger, Not done / follow-ups, Checklist) and fill them in. Before writing the body, call the Skill tool with "pr" for how to write Summary, Evidence and Merge Danger (its visual examples). Keep this template's sections: Closes, Not done / follow-ups and Checklist stay. Tick only the checklist items you actually ran.
 
 Work closes through PRs: `Closes #<n>` in the body closes the issue on merge, one line per issue. `/implement-spec` should open its draft PR and list the spec and every ticket there.
 

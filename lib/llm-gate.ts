@@ -9,6 +9,8 @@ export type LlmPause = LlmFailureRecord & { pausedUntil: number };
 export interface LlmGateOptions {
   /** The LLM engine for the given Settings' Provider and key. */
   engine(settings: Settings): Engine;
+  /** The Settings now, to tell whether a check failed with credentials the user has since changed. */
+  settings(): Promise<Settings>;
   /** Called with the new failure, or undefined after a success, whenever it changes. */
   onFailureChange?(failure: LlmFailureRecord | undefined): void;
   /** Keeps the failure and its pause across worker restarts; without it they live in memory only. */
@@ -27,7 +29,9 @@ export interface LlmGate {
   /**
    * Checks one sentence with the Settings' Provider. Throws an LlmFailedError
    * when the check fails, and the same one at once while paused after it,
-   * with how much of the pause is left.
+   * with how much of the pause is left. A check that fails after the user
+   * changed the Provider or key starts no pause and is not announced: the
+   * error says to ask again at once, with the new ones.
    */
   check(text: string, settings: Settings): Promise<Slip[]>;
   /**
@@ -60,6 +64,7 @@ export function createLlmGate(options: LlmGateOptions): LlmGate {
       found = await options.engine(settings).check(text);
     } catch (error) {
       const reason = error instanceof LlmFailedError ? error.failure : 'bad-response';
+      if (llmCredentials(await options.settings()) !== credentials) throw new LlmFailedError(reason, 0);
       setPause({ reason, credentials, pausedUntil: Date.now() + LLM_FAILURE_PAUSE_MS });
       throw new LlmFailedError(reason, LLM_FAILURE_PAUSE_MS);
     }

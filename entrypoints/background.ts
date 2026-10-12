@@ -40,6 +40,7 @@ export default defineBackground(() => {
   const llmPause = storage.defineItem<LlmPause | null>('session:llmPause', { fallback: null });
   const llmGate = createLlmGate({
     engine: (settings) => createLlmEngine(settings.llmProvider, settings.llmApiKey),
+    settings: () => store.getSettings(),
     onFailureChange: (failure) => void broadcast({ type: 'llm-failure', failure: failure ?? null }),
     storage: { get: () => llmPause.getValue(), set: (pause) => llmPause.setValue(pause ?? null) },
   });

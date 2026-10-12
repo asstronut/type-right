@@ -965,6 +965,7 @@ describe('createFieldChecker', () => {
         const failure = createSharedLlmFailure();
         const gate = createLlmGate({
           engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
+          settings: async () => ({ ...DEFAULT_SETTINGS, llmProvider, ...allowed }),
           onFailureChange: (next) => failure.set(next),
         });
         return { gate, failure };

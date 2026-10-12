@@ -20,7 +20,7 @@ export interface CheckSite {
 export interface FieldCheckerOptions {
   engines: CheckEngines;
   /**
-   * The site the field is on, for the Disabled site rule, the Dictionary and
+   * The site the Field is on, for the Disabled site rule, the Dictionary and
    * the Provider the sentence cache is keyed by; without it every check runs.
    * Whether text may go to the LLM is `llmHealth`'s call.
    */

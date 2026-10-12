@@ -59,11 +59,11 @@ interface FieldState {
 interface Running {
   /** Removes all trace of Type Right from the page. */
   stop(): void;
-  /** Shows the page's LLM health on every field's badge. */
+  /** Shows the page's LLM health on every Field's LLM badge. */
   showLlmHealth(health: LlmHealth): void;
-  /** Re-renders every field's Slips, after a Settings change (e.g. the dictionary). */
+  /** Re-renders every Field's Slips, after a Settings change (e.g. the Dictionary). */
   refreshFields(): void;
-  /** Lets every field count its Slips again, after the counts are reset. */
+  /** Lets every Field count its Slips again, after the counts are reset. */
   forgetReported(): void;
 }
 
@@ -74,7 +74,7 @@ export default defineContentScript({
     let settings = await store.getSettings();
     const site = { hostname, settings: () => settings };
 
-    // One LLM health for every field on the page, kept in step with Settings and
+    // One LLM health for every Field on the page, kept in step with Settings and
     // the background worker, so a failure in any tab turns every badge red. It
     // keeps running while the site is turned off and on.
     const llmHealth = createLlmHealth({

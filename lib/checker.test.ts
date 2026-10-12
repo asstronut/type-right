@@ -134,8 +134,8 @@ describe('createFieldChecker', () => {
   }
 
   /**
-   * A field. With `withLlm` its LLM checks go through its page's wiring, as in
-   * the extension; a field given the `llmPage` of another shares its LLM health.
+   * A Field. With `withLlm` its LLM checks go through its page's wiring, as in
+   * the extension; a Field given the `llmPage` of another shares its LLM health.
    */
   function setup(site?: { hostname: string; settings: Partial<Settings> }, withLlm = false, llmPage?: LlmPage) {
     const languageTool = createLanguageToolEngine({
@@ -173,7 +173,7 @@ describe('createFieldChecker', () => {
         return immediate;
       },
       update: checker.update,
-      /** The LLM health the field's page shows. */
+      /** The LLM health the Field's page shows. */
       llmHealth: () => page?.health.health(),
       /** Saves new Settings, as the Options page would. */
       changeSettings: (changes: Partial<Settings>) => page!.wiring.changeSettings(changes),

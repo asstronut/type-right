@@ -221,7 +221,7 @@ describe('createLlmHealth', () => {
       release();
       await vi.advanceTimersByTimeAsync(0);
 
-      // The answer said the LLM was fine, which was true before the failure.
+      // The answer said the LLM was fine, which was true before the failure; asked again, the worker knows of it.
       expect(page.health()).toEqual({ state: 'failing', reason: 'bad-response' });
     });
   });
@@ -280,6 +280,40 @@ describe('createLlmHealth', () => {
 
       answers[1]!(undefined);
       answers[0]!('quota');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(page.health()).toEqual({ state: 'active' });
+    });
+
+    it('forgets a failure made with the old key whose announcement arrives after the page asked again', async () => {
+      const wiring = createTestLlmWiring(allowed);
+      let answersArrive = Promise.resolve();
+      let announcementsArrive = Promise.resolve();
+      /** The worker answers and announces at once; both reach the page only when let through. */
+      const link: LlmFailureLink = {
+        currentFailure: async () => {
+          const answer = await wiring.link.currentFailure();
+          await answersArrive;
+          return answer;
+        },
+        onFailureChange: (onChange) =>
+          wiring.link.onFailureChange((failure) => void announcementsArrive.then(() => onChange(failure))),
+      };
+      const page = createLlmHealth({ hostname: 'github.com', settings: wiring.settingsSource, link });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // A check with the old key fails; its announcement is still on its way when the user saves a new key.
+      let deliverAnnouncement!: () => void;
+      announcementsArrive = new Promise((resolve) => (deliverAnnouncement = resolve));
+      let deliverAnswer!: () => void;
+      answersArrive = new Promise((resolve) => (deliverAnswer = resolve));
+      responses.push(() => new Response('{}', { status: 401 }));
+      await wiring.gate.check('I am agree.', wiring.settings()).catch(() => {});
+      wiring.changeSettings({ llmApiKey: 'new-key' });
+
+      deliverAnnouncement();
+      await vi.advanceTimersByTimeAsync(0);
+      deliverAnswer();
       await vi.advanceTimersByTimeAsync(0);
 
       expect(page.health()).toEqual({ state: 'active' });

@@ -91,8 +91,11 @@ export function createLlmHealth(options: LlmHealthOptions): PageLlmHealth {
     const announcedBefore = announced;
     link.currentFailure().then(
       (answer) => {
-        // A later question, or an announcement that came while this answer was on its way, is newer than it.
-        if (question !== asked || announced !== announcedBefore) return;
+        // A later question is newer than this one.
+        if (question !== asked) return;
+        // An announcement came while this answer was on its way. It may be newer than the answer, or, after
+        // a Settings change, a failure made with the old key. Only the worker can tell, so ask it again.
+        if (announced !== announcedBefore) return ask();
         failure = answer;
         refresh();
       },

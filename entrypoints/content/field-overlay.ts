@@ -1,4 +1,4 @@
-import type { LlmHealth } from '../../lib/checker';
+import type { LlmHealth } from '../../lib/llm-health';
 import type { LlmFailure } from '../../lib/engine';
 import type { Slip } from '../../lib/slips';
 

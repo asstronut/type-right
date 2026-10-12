@@ -111,7 +111,7 @@ describe('createLlmGate', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(await gate.failure(settings)).toBeUndefined();
-    expect(changes).toEqual([{ reason: 'bad-response', credentials: 'glm:test-key' }, undefined]);
+    expect(changes).toEqual(['bad-response', undefined]);
   });
 
   it.each([

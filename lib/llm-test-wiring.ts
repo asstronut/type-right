@@ -31,7 +31,7 @@ export function createTestLlmWiring(initial: Partial<Settings> = {}): TestLlmWir
     engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
     settings: async () => settings,
     onFailureChange: (failure) => {
-      void Promise.resolve().then(() => failureWatchers.forEach((watcher) => watcher(failure?.reason)));
+      void Promise.resolve().then(() => failureWatchers.forEach((watcher) => watcher(failure)));
     },
   });
 

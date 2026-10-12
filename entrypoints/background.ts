@@ -14,7 +14,7 @@ import type {
   LlmFailureResponse,
   TallyMessage,
 } from '../lib/messages';
-import { isLlmAllowed, languageToolConfig, llmCredentials, type Settings } from '../lib/settings';
+import { languageToolConfig, llmPermission, type Settings } from '../lib/settings';
 import { store } from '../lib/store';
 
 export default defineBackground(() => {
@@ -55,15 +55,12 @@ export default defineBackground(() => {
       return respond((settings) => {
         // The checker gates this too; this is the last line before text leaves the browser.
         const hostname = sender.url ? new URL(sender.url).hostname : '';
-        if (!hostname || !isLlmAllowed(hostname, settings)) throw new Error('LLM not allowed');
+        if (!hostname || !llmPermission(hostname, settings).allowed) throw new Error('LLM not allowed');
         return llmGate.check(message.text, settings);
       });
     }
     if (message?.type === 'get-llm-failure') {
-      return store.getSettings().then(async (settings): Promise<LlmFailureResponse> => {
-        const reason = await llmGate.failure(settings);
-        return reason ? { reason, credentials: llmCredentials(settings) } : null;
-      });
+      return store.getSettings().then(async (settings): Promise<LlmFailureResponse> => (await llmGate.failure(settings)) ?? null);
     }
   });
 });

@@ -15,6 +15,9 @@ export class RateLimitedError extends Error {
 /** Why the LLM could not check a sentence. */
 export type LlmFailure = 'no-key' | 'quota' | 'network' | 'timeout' | 'bad-response';
 
+/** After any LLM failure, no request reaches the Provider for this long. */
+export const LLM_FAILURE_PAUSE_MS = 60_000;
+
 /**
  * The LLM request failed for a known reason, shown to the user on the field's
  * LLM badge. `retryAfterMs` says when the LLM may be asked again, if known.

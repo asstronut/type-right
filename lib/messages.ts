@@ -1,5 +1,4 @@
 import type { LlmFailure } from './engine';
-import type { LlmFailureRecord } from './llm-failure';
 import type { Slip } from './slips';
 import type { SlipSighting } from './slip-tally';
 
@@ -22,12 +21,13 @@ export type CheckResponse =
 export type TallyMessage = { type: 'record-slips'; sightings: SlipSighting[] } | { type: 'reset-tally' };
 
 /**
- * The background worker tells every tab that the LLM's failure changed: why
- * and with which Provider and key it fails now, or null after a success.
+ * The background worker tells every tab that the LLM's failure changed: why it
+ * fails now, or null after a success. Only failures with the Provider and key
+ * in use are announced, so a tab never handles credentials.
  */
 export interface LlmFailureMessage {
   type: 'llm-failure';
-  failure: LlmFailureRecord | null;
+  failure: LlmFailure | null;
 }
 
 /** A tab asks the background worker why the LLM fails right now. */
@@ -35,5 +35,5 @@ export interface LlmFailureQuery {
   type: 'get-llm-failure';
 }
 
-/** The LLM's current failure with the current Provider and key, or null when it isn't failing. */
-export type LlmFailureResponse = LlmFailureRecord | null;
+/** Why the LLM fails with the current Provider and key, or null when it isn't failing. */
+export type LlmFailureResponse = LlmFailure | null;

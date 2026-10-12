@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLanguageToolEngine } from './engines/language-tool';
 import {
   DEFAULT_SETTINGS,
-  isLlmAllowed,
   isSiteDisabled,
   isSiteExcluded,
   languageToolConfig,
@@ -164,10 +163,10 @@ describe('LLM provider', () => {
   it('gates the LLM the same way for either provider', () => {
     for (const llmProvider of ['glm', 'gemini'] as const) {
       const allowed = normalizeSettings({ llmProvider, llmApiKey: 'k', llmConsent: true, excludedSites: ['x.com'] });
-      expect(isLlmAllowed('github.com', allowed)).toBe(true);
-      expect(isLlmAllowed('x.com', allowed)).toBe(false);
-      expect(isLlmAllowed('github.com', { ...allowed, llmConsent: false })).toBe(false);
-      expect(isLlmAllowed('github.com', { ...allowed, llmApiKey: '' })).toBe(false);
+      expect(llmPermission('github.com', allowed).allowed).toBe(true);
+      expect(llmPermission('x.com', allowed).allowed).toBe(false);
+      expect(llmPermission('github.com', { ...allowed, llmConsent: false }).allowed).toBe(false);
+      expect(llmPermission('github.com', { ...allowed, llmApiKey: '' }).allowed).toBe(false);
     }
   });
 
@@ -175,7 +174,7 @@ describe('LLM provider', () => {
     const next = mergeSettings(glmUser, { llmProvider: 'gemini' });
 
     expect(next).toMatchObject({ llmProvider: 'gemini', llmConsent: false, llmApiKey: '' });
-    expect(isLlmAllowed('github.com', next)).toBe(false);
+    expect(llmPermission('github.com', next).allowed).toBe(false);
   });
 
   it('never carries the old key over, even when it is resubmitted with the change', () => {

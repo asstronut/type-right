@@ -6,6 +6,7 @@ import {
   isSiteDisabled,
   isSiteExcluded,
   languageToolConfig,
+  llmPermission,
   mergeSettings,
   normalizeSettings,
   normalizeSite,
@@ -106,6 +107,43 @@ describe('LLM consent', () => {
     expect(normalizeSettings(undefined).llmConsent).toBe(false);
     expect(normalizeSettings({ llmConsent: 'yes' as unknown as boolean }).llmConsent).toBe(false);
     expect(normalizeSettings({ llmConsent: true }).llmConsent).toBe(true);
+  });
+});
+
+describe('LLM permission', () => {
+  const allowed = normalizeSettings({
+    llmApiKey: 'k',
+    llmConsent: true,
+    excludedSites: ['x.com'],
+    disabledSites: ['off.com'],
+  });
+
+  it('allows text on a site once there is consent and a key', () => {
+    expect(llmPermission('github.com', allowed)).toEqual({ allowed: true });
+  });
+
+  it.each([
+    ['consent is missing', 'github.com', { llmConsent: false }, 'no-consent'],
+    ['the site is excluded', 'x.com', {}, 'excluded-site'],
+    ['a subdomain of an excluded site', 'mail.x.com', {}, 'excluded-site'],
+    ['the key is missing', 'github.com', { llmApiKey: '' }, 'no-key'],
+    ['the site is disabled', 'off.com', {}, 'disabled-site'],
+  ] as const)('is denied, with its reason, when %s', (_, hostname, change, reason) => {
+    expect(llmPermission(hostname, { ...allowed, ...change })).toEqual({ allowed: false, reason });
+  });
+
+  it('names a disabled site last, so what would stop the LLM with Type Right on still shows', () => {
+    expect(llmPermission('off.com', { ...allowed, llmConsent: false })).toMatchObject({ reason: 'no-consent' });
+    expect(llmPermission('off.com', { ...allowed, llmApiKey: '' })).toMatchObject({ reason: 'no-key' });
+    expect(llmPermission('off.com', { ...allowed, excludedSites: ['off.com'] })).toMatchObject({
+      reason: 'excluded-site',
+    });
+  });
+
+  it('asks for consent before a key, so a user who has done neither sees the privacy reason', () => {
+    expect(llmPermission('github.com', { ...allowed, llmConsent: false, llmApiKey: '' })).toMatchObject({
+      reason: 'no-consent',
+    });
   });
 });
 

@@ -19,7 +19,11 @@ export interface CheckSite {
 
 export interface FieldCheckerOptions {
   engines: CheckEngines;
-  /** The site the field is on; without it every check runs. */
+  /**
+   * The site the field is on, for the Disabled site rule, the Dictionary and
+   * the Provider the sentence cache is keyed by; without it every check runs.
+   * Whether text may go to the LLM is `llmHealth`'s call.
+   */
   site?: CheckSite;
   /** Called with the field's current Slips whenever a check changes them. */
   onChange(slips: Slip[]): void;

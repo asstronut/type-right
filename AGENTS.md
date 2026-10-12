@@ -7,7 +7,7 @@ Chrome MV3 extension (WXT, TypeScript, Vitest). Vocabulary: `GLOSSARY.md`. Detai
 - `entrypoints/background.ts`: runs the Engines (all network calls, API key stays here) and serializes Tally writes.
 - `lib/engine.ts`, `lib/engines/{language-tool,llm}.ts`, `lib/llm-providers.ts`: the Engine interface, adapters and Provider configs.
 - `lib/llm-gate.ts` (background: shared LLM failure pause, refuses checks while paused; the only place that knows a failure's Provider and key) and `lib/llm-health.ts` (content script: the page's LLM health, which every Field's badge and the checker read; it learns failures from the gate through a link). `lib/llm-test-wiring.ts` builds that link around a real gate for tests.
-- `lib/settings.ts` (Settings shape, site lists, provider-change rules) and `lib/store.ts` (`chrome.storage.local`).
+- `lib/settings.ts` (Settings shape, site lists, provider-change rules, `llmPermission`: whether text on a site may go to the LLM, or why not) and `lib/store.ts` (`chrome.storage.local`).
 - `lib/slips.ts` (`Slip`, stable ids), `lib/slip-tally.ts` (Tally), `lib/messages.ts` (content↔background messages).
 - `entrypoints/{popup,options,consent}/`: extension pages.
 - `eval/llm/`: on-demand LLM prompt eval against the real API (`npm run eval:llm`). `run.ts` (the API run) is not part of `npm test`; `score.test.ts` (scoring, no network) is.

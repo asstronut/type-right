@@ -89,6 +89,8 @@ let llmProvider: LlmProviderId;
 let llmReplies: Record<string, string>;
 /** Raw LLM responses to return (or throw), in order, before falling back to `llmReplies`. */
 let llmResponses: ((init: { signal?: AbortSignal }) => Response | Promise<Response>)[];
+/** How many of the next LLM checks fail before reaching the worker, as when the page loses its connection to it. */
+let workerUnreachable: number;
 
 function llmReply(slips: LlmSlip[]): string {
   return JSON.stringify({ errors: slips });
@@ -148,7 +150,12 @@ describe('createFieldChecker', () => {
     const checker = createFieldChecker({
       engines: {
         languageTool,
-        llm: page && { check: (text) => page.wiring.gate.check(text, page.wiring.settings()) },
+        llm: page && {
+          check: (text) =>
+            workerUnreachable-- > 0
+              ? Promise.reject(new Error('LLM check failed'))
+              : page.wiring.gate.check(text, page.wiring.settings()),
+        },
       },
       site: hostname ? { hostname, settings } : undefined,
       llmHealth: page?.health,
@@ -211,6 +218,7 @@ describe('createFieldChecker', () => {
     tally = EMPTY_TALLY;
     llmReplies = {};
     llmResponses = [];
+    workerUnreachable = 0;
     llmProvider = 'glm';
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockImplementation(async (url: string, init: { body: string; signal?: AbortSignal }) => {
@@ -907,6 +915,47 @@ describe('createFieldChecker', () => {
 
         expect(llmSent()).toEqual([sentence, sentence]);
         expect(field.llmHealth()).toEqual({ state: 'active' });
+      });
+    });
+
+    describe('when a check does not reach the LLM', () => {
+      const sentence = 'I am agree with you.';
+
+      it('keeps the page active and retries after 5s, not the 60s LLM pause', async () => {
+        const field = setup(undefined, true);
+        workerUnreachable = 1;
+        await field.typeAndWait(sentence);
+        expect(field.llmHealth()).toEqual({ state: 'active' });
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(llmSent()).toEqual([sentence]);
+      });
+
+      it('waits twice as long each time it fails again, up to the 60s LLM pause', async () => {
+        const field = setup(undefined, true);
+        workerUnreachable = 6;
+        await field.typeAndWait(sentence);
+
+        // Fails at 0s, then 5, 15, 35, 75 and 135s; the sixth retry, 60s later, reaches the LLM.
+        await vi.advanceTimersByTimeAsync(194_000);
+        expect(llmSent()).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(llmSent()).toEqual([sentence]);
+      });
+
+      it('starts again from 5s after a check that reaches the LLM', async () => {
+        const field = setup(undefined, true);
+        workerUnreachable = 2;
+        await field.typeAndWait(sentence);
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(llmSent()).toEqual([sentence]);
+
+        workerUnreachable = 1;
+        await field.typeAndWait('Bye.');
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(llmSent()).toEqual([sentence, 'Bye.']);
       });
     });
 

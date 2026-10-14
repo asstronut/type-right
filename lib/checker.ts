@@ -74,6 +74,8 @@ const DEFAULT_LLM_DEBOUNCE_MS = 1500;
 const MAX_CACHED_SENTENCES = 500;
 const DEFAULT_RETRY_MS = 30_000;
 const MIN_RETRY_MS = 1_000;
+/** The first wait after an LLM check that never reached the LLM; it doubles each time, up to the LLM pause. */
+const UNREACHED_RETRY_MS = 5_000;
 /** LanguageTool's free tier rejects requests over 20k characters. */
 const MAX_REQUEST_CHARS = 20_000;
 
@@ -99,6 +101,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   let llmTimer: ReturnType<typeof setTimeout> | undefined;
   let llmRunning = false;
   let llmBlockedUntil = 0;
+  /** How long to wait after the next LLM check that never reaches the LLM. */
+  let unreachedRetryMs = UNREACHED_RETRY_MS;
   /** LLM results by sentence text, so an unchanged sentence is never sent twice. */
   const llmCache = new Map<string, Slip[]>();
   /** The LLM provider the cached results came from. */
@@ -262,13 +266,19 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
         try {
           found = await llm.check(sentenceText);
         } catch (error) {
-          // The worker's gate pauses the LLM after a failure and says for how long, and tells the page's
-          // LLM health why; a failure of any other kind waits out the same pause.
-          const retryAfterMs = error instanceof LlmFailedError ? error.retryAfterMs : undefined;
-          llmBlockedUntil = Date.now() + (retryAfterMs ?? LLM_FAILURE_PAUSE_MS);
+          if (error instanceof LlmFailedError) {
+            // The worker's gate pauses the LLM after a failure, says for how long, and tells the page's LLM health why.
+            llmBlockedUntil = Date.now() + (error.retryAfterMs ?? LLM_FAILURE_PAUSE_MS);
+          } else {
+            // The check never reached the LLM (the worker turned it away, or the page lost the worker), so the
+            // LLM's health is unknown: try again soon, and less often while it keeps happening.
+            llmBlockedUntil = Date.now() + unreachedRetryMs;
+            unreachedRetryMs = Math.min(unreachedRetryMs * 2, LLM_FAILURE_PAUSE_MS);
+          }
           scheduleLlm(0);
           return;
         }
+        unreachedRetryMs = UNREACHED_RETRY_MS;
         cacheLlmResult(sentenceText, found);
         // The text moved on; the newer edit has its own check queued, which will hit the cache.
         if (version !== startVersion || disposed) return;

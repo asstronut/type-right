@@ -52,8 +52,6 @@ export function createLlmHealth(options: LlmHealthOptions): PageLlmHealth {
   let settings = options.settings.get();
   /** Why the worker says the LLM fails, or undefined while it doesn't. */
   let failure: LlmFailure | undefined;
-  /** How many announcements have arrived. */
-  let announced = 0;
   /** How many times the worker has been asked why the LLM fails. */
   let asked = 0;
   const watchers = new Set<(health: LlmHealth) => void>();
@@ -88,14 +86,10 @@ export function createLlmHealth(options: LlmHealthOptions): PageLlmHealth {
   /** Asks the worker why the LLM fails now. */
   function ask(): void {
     const question = ++asked;
-    const announcedBefore = announced;
     link.currentFailure().then(
       (answer) => {
-        // A later question is newer than this one.
+        // A later question, or an announcement since, is newer than this answer.
         if (question !== asked) return;
-        // An announcement came while this answer was on its way. It may be newer than the answer, or, after
-        // a Settings change, a failure made with the old key. Only the worker can tell, so ask it again.
-        if (announced !== announcedBefore) return ask();
         failure = answer;
         refresh();
       },
@@ -104,14 +98,17 @@ export function createLlmHealth(options: LlmHealthOptions): PageLlmHealth {
   }
 
   const stopListening = link.onFailureChange((next) => {
-    announced++;
     failure = next;
     refresh();
+    // After a Settings change this may be a failure made with the old key, which only the worker can tell.
+    ask();
   });
   ask();
 
   // The Provider or key may have changed, which only the worker's gate can tell a failure from.
   const stopWatchingSettings = options.settings.watch((next) => {
+    // Changing the key or Provider clears a failure; the worker's answer may bring a newer one.
+    if (next.llmProvider !== settings.llmProvider || next.llmApiKey !== settings.llmApiKey) failure = undefined;
     settings = next;
     refresh();
     ask();

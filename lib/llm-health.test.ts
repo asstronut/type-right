@@ -319,6 +319,50 @@ describe('createLlmHealth', () => {
       expect(page.health()).toEqual({ state: 'active' });
     });
 
+    it('forgets a failure made with the old key whose announcement arrives after the answer', async () => {
+      const wiring = createTestLlmWiring(allowed);
+      let announcementsArrive = Promise.resolve();
+      /** The worker announces at once; the announcement reaches the page only when let through. */
+      const link: LlmFailureLink = {
+        ...wiring.link,
+        onFailureChange: (onChange) =>
+          wiring.link.onFailureChange((failure) => void announcementsArrive.then(() => onChange(failure))),
+      };
+      const page = createLlmHealth({ hostname: 'github.com', settings: wiring.settingsSource, link });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // A check with the old key fails; its announcement is still on its way when the user saves a new key.
+      let deliverAnnouncement!: () => void;
+      announcementsArrive = new Promise((resolve) => (deliverAnnouncement = resolve));
+      responses.push(() => new Response('{}', { status: 401 }));
+      await wiring.gate.check('I am agree.', wiring.settings()).catch(() => {});
+      wiring.changeSettings({ llmApiKey: 'new-key' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      deliverAnnouncement();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(page.health()).toEqual({ state: 'active' });
+    });
+
+    it.each([
+      ['key', { llmApiKey: 'new-key' }],
+      ['Provider', { llmProvider: 'gemini' }],
+    ] as const)('turns active at once when the %s changes, before the worker answers', async (_, change) => {
+      const wiring = createTestLlmWiring(allowed);
+      const page = wiring.openPage('github.com');
+      responses.push(() => new Response('{}', { status: 401 }));
+      await check(wiring);
+      const seen: LlmHealth[] = [];
+      page.watch((health) => seen.push(health));
+
+      wiring.changeSettings(change);
+
+      expect(page.health()).toEqual({ state: 'active' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(seen).toEqual([{ state: 'active' }]);
+    });
+
     it('keeps a failure the worker still has after a change that is not about the LLM', async () => {
       const wiring = createTestLlmWiring(allowed);
       const page = wiring.openPage('github.com');

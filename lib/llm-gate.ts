@@ -1,16 +1,25 @@
-import { LlmFailedError, type Engine, type LlmFailure } from './engine';
-import { LLM_FAILURE_PAUSE_MS, type LlmFailureRecord } from './llm-failure';
-import { llmCredentials, type Settings } from './settings';
+import { LLM_FAILURE_PAUSE_MS, LlmFailedError, type Engine, type LlmFailure } from './engine';
+import type { Settings } from './settings';
 import type { Slip } from './slips';
 
-/** A failure and the end of the pause after it. */
-export type LlmPause = LlmFailureRecord & { pausedUntil: number };
+/** Why the LLM last failed, the Provider and key (see `llmCredentials`) it failed with, and the end of the pause after it. */
+export interface LlmPause {
+  reason: LlmFailure;
+  credentials: string;
+  pausedUntil: number;
+}
 
 export interface LlmGateOptions {
   /** The LLM engine for the given Settings' Provider and key. */
   engine(settings: Settings): Engine;
-  /** Called with the new failure, or undefined after a success, whenever it changes. */
-  onFailureChange?(failure: LlmFailureRecord | undefined): void;
+  /** The Settings now, to tell whether a check failed with credentials the user has since changed. */
+  settings(): Promise<Settings>;
+  /**
+   * Called with the new failure's reason, or undefined after a success,
+   * whenever it changes. Only failures made with the current Provider and key
+   * are announced, so whoever listens never needs to compare them.
+   */
+  onFailureChange?(failure: LlmFailure | undefined): void;
   /** Keeps the failure and its pause across worker restarts; without it they live in memory only. */
   storage?: {
     get(): Promise<LlmPause | undefined | null>;
@@ -27,7 +36,9 @@ export interface LlmGate {
   /**
    * Checks one sentence with the Settings' Provider. Throws an LlmFailedError
    * when the check fails, and the same one at once while paused after it,
-   * with how much of the pause is left.
+   * with how much of the pause is left. A check that fails after the user
+   * changed the Provider or key starts no pause and is not announced: the
+   * error says to ask again at once, with the new ones.
    */
   check(text: string, settings: Settings): Promise<Slip[]>;
   /**
@@ -36,6 +47,11 @@ export interface LlmGate {
    * to fix it, so the next check asks the Provider at once).
    */
   failure(settings: Settings): Promise<LlmFailure | undefined>;
+}
+
+/** Identifies the Provider and key an LLM request is sent with, so a failure can be tied to them. Only the gate knows them. */
+function llmCredentials(settings: Settings): string {
+  return `${settings.llmProvider}:${settings.llmApiKey}`;
 }
 
 export function createLlmGate(options: LlmGateOptions): LlmGate {
@@ -60,6 +76,7 @@ export function createLlmGate(options: LlmGateOptions): LlmGate {
       found = await options.engine(settings).check(text);
     } catch (error) {
       const reason = error instanceof LlmFailedError ? error.failure : 'bad-response';
+      if (llmCredentials(await options.settings()) !== credentials) throw new LlmFailedError(reason, 0);
       setPause({ reason, credentials, pausedUntil: Date.now() + LLM_FAILURE_PAUSE_MS });
       throw new LlmFailedError(reason, LLM_FAILURE_PAUSE_MS);
     }
@@ -72,7 +89,7 @@ export function createLlmGate(options: LlmGateOptions): LlmGate {
     if (!next && !pause) return;
     pause = next;
     void options.storage?.set(next).catch(() => {});
-    if (changed) options.onFailureChange?.(next && { reason: next.reason, credentials: next.credentials });
+    if (changed) options.onFailureChange?.(next?.reason);
   }
 
   return {

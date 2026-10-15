@@ -4,7 +4,7 @@ import { FieldOverlay } from './field-overlay';
 import { HoverController } from './hover';
 import { createFieldChecker, type FieldChecker } from '../../lib/checker';
 import { LlmFailedError, RateLimitedError, type Engine } from '../../lib/engine';
-import { createSharedLlmFailure } from '../../lib/llm-failure';
+import { createLlmHealth, type LlmFailureLink, type LlmHealth } from '../../lib/llm-health';
 import type {
   CheckMessage,
   CheckResponse,
@@ -35,6 +35,22 @@ const engines = {
   llm: backgroundEngine('check-sentence', 'LLM'),
 };
 
+/** The background worker's LLM gate, asked and listened to by message. */
+const backgroundLlmFailure: LlmFailureLink = {
+  async currentFailure() {
+    const query: LlmFailureQuery = { type: 'get-llm-failure' };
+    const failure = (await browser.runtime.sendMessage(query)) as LlmFailureResponse | undefined;
+    return failure ?? undefined;
+  },
+  onFailureChange(onChange) {
+    const listener = (message: LlmFailureMessage) => {
+      if (message?.type === 'llm-failure') onChange(message.failure ?? undefined);
+    };
+    browser.runtime.onMessage.addListener(listener);
+    return () => browser.runtime.onMessage.removeListener(listener);
+  },
+};
+
 interface FieldState {
   overlay: FieldOverlay;
   checker: FieldChecker;
@@ -43,9 +59,11 @@ interface FieldState {
 interface Running {
   /** Removes all trace of Type Right from the page. */
   stop(): void;
-  /** Re-reads every field's LLM health and Slips, after a Settings change (e.g. the dictionary). */
+  /** Shows the page's LLM health on every Field's LLM badge. */
+  showLlmHealth(health: LlmHealth): void;
+  /** Re-renders every Field's Slips, after a Settings change (e.g. the Dictionary). */
   refreshFields(): void;
-  /** Lets every field count its Slips again, after the counts are reset. */
+  /** Lets every Field count its Slips again, after the counts are reset. */
   forgetReported(): void;
 }
 
@@ -56,23 +74,14 @@ export default defineContentScript({
     let settings = await store.getSettings();
     const site = { hostname, settings: () => settings };
 
-    // One LLM failure for every field on the page, kept in step with the
-    // background worker so a failure in any tab turns every badge red.
-    const llmFailure = createSharedLlmFailure();
-    /** Set once a broadcast arrives, which is newer than the answer to the start-up query. */
-    let heardBroadcast = false;
-    browser.runtime.onMessage.addListener((message: LlmFailureMessage) => {
-      if (message?.type !== 'llm-failure') return;
-      heardBroadcast = true;
-      llmFailure.set(message.failure ?? undefined);
+    // One LLM health for every Field on the page, kept in step with Settings and
+    // the background worker, so a failure in any tab turns every badge red. It
+    // keeps running while the site is turned off and on.
+    const llmHealth = createLlmHealth({
+      hostname,
+      settings: { get: () => settings, watch: (onChange) => store.watchSettings(onChange) },
+      link: backgroundLlmFailure,
     });
-    const query: LlmFailureQuery = { type: 'get-llm-failure' };
-    void browser.runtime.sendMessage(query).then(
-      (failure: LlmFailureResponse | undefined) => {
-        if (!heardBroadcast) llmFailure.set(failure ?? undefined);
-      },
-      () => {},
-    );
 
     const hover = new HoverController();
     /** Set while Type Right is running on this page. */
@@ -90,15 +99,14 @@ export default defineContentScript({
         const checker = createFieldChecker({
           engines,
           site,
-          llmFailure,
+          llmHealth,
           onChange: (slips) => overlay.render(field.value, slips),
-          onLlmHealthChange: (health) => overlay.setLlmHealth(health),
           onSlipsSeen: (sightings) => {
             const message: TallyMessage = { type: 'record-slips', sightings };
             void browser.runtime.sendMessage(message).catch(() => {});
           },
         });
-        overlay.setLlmHealth(checker.llmHealth());
+        overlay.setLlmHealth(llmHealth.health());
         fields.set(field, { overlay, checker });
         hover.watch(field, overlay, {
           ignore: (slip) => checker.ignore(slip.id),
@@ -147,11 +155,11 @@ export default defineContentScript({
             overlay.destroy();
           });
         },
+        showLlmHealth(health) {
+          fields.forEach(({ overlay }) => overlay.setLlmHealth(health));
+        },
         refreshFields() {
-          fields.forEach(({ overlay, checker }, field) => {
-            overlay.setLlmHealth(checker.llmHealth());
-            overlay.render(field.value, checker.slips());
-          });
+          fields.forEach(({ overlay, checker }, field) => overlay.render(field.value, checker.slips()));
         },
         forgetReported() {
           fields.forEach(({ checker }) => checker.forgetReported());
@@ -172,11 +180,11 @@ export default defineContentScript({
     }
 
     apply();
+    llmHealth.watch((health) => running?.showLlmHealth(health));
     store.watchSettings((next) => {
       settings = next;
       apply();
-      // Consent, the key or the site lists may have changed what the LLM badge
-      // should say, and the dictionary which Slips to show.
+      // The dictionary may have changed which Slips to show.
       running?.refreshFields();
     });
     // Only a reset empties the tally; Slips still on screen count again on their field's next check.

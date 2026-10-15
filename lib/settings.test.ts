@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLanguageToolEngine } from './engines/language-tool';
 import {
   DEFAULT_SETTINGS,
-  isLlmAllowed,
   isSiteDisabled,
   isSiteExcluded,
   languageToolConfig,
+  llmPermission,
   mergeSettings,
   normalizeSettings,
   normalizeSite,
@@ -109,6 +109,43 @@ describe('LLM consent', () => {
   });
 });
 
+describe('LLM permission', () => {
+  const allowed = normalizeSettings({
+    llmApiKey: 'k',
+    llmConsent: true,
+    excludedSites: ['x.com'],
+    disabledSites: ['off.com'],
+  });
+
+  it('allows text on a site once there is consent and a key', () => {
+    expect(llmPermission('github.com', allowed)).toEqual({ allowed: true });
+  });
+
+  it.each([
+    ['consent is missing', 'github.com', { llmConsent: false }, 'no-consent'],
+    ['the site is excluded', 'x.com', {}, 'excluded-site'],
+    ['a subdomain of an excluded site', 'mail.x.com', {}, 'excluded-site'],
+    ['the key is missing', 'github.com', { llmApiKey: '' }, 'no-key'],
+    ['the site is disabled', 'off.com', {}, 'disabled-site'],
+  ] as const)('is denied, with its reason, when %s', (_, hostname, change, reason) => {
+    expect(llmPermission(hostname, { ...allowed, ...change })).toEqual({ allowed: false, reason });
+  });
+
+  it('names a disabled site last, so what would stop the LLM with Type Right on still shows', () => {
+    expect(llmPermission('off.com', { ...allowed, llmConsent: false })).toMatchObject({ reason: 'no-consent' });
+    expect(llmPermission('off.com', { ...allowed, llmApiKey: '' })).toMatchObject({ reason: 'no-key' });
+    expect(llmPermission('off.com', { ...allowed, excludedSites: ['off.com'] })).toMatchObject({
+      reason: 'excluded-site',
+    });
+  });
+
+  it('asks for consent before a key, so a user who has done neither sees the privacy reason', () => {
+    expect(llmPermission('github.com', { ...allowed, llmConsent: false, llmApiKey: '' })).toMatchObject({
+      reason: 'no-consent',
+    });
+  });
+});
+
 describe('LLM provider', () => {
   const glmUser = normalizeSettings({ llmProvider: 'glm', llmApiKey: 'glm-key', llmConsent: true });
 
@@ -126,10 +163,10 @@ describe('LLM provider', () => {
   it('gates the LLM the same way for either provider', () => {
     for (const llmProvider of ['glm', 'gemini'] as const) {
       const allowed = normalizeSettings({ llmProvider, llmApiKey: 'k', llmConsent: true, excludedSites: ['x.com'] });
-      expect(isLlmAllowed('github.com', allowed)).toBe(true);
-      expect(isLlmAllowed('x.com', allowed)).toBe(false);
-      expect(isLlmAllowed('github.com', { ...allowed, llmConsent: false })).toBe(false);
-      expect(isLlmAllowed('github.com', { ...allowed, llmApiKey: '' })).toBe(false);
+      expect(llmPermission('github.com', allowed).allowed).toBe(true);
+      expect(llmPermission('x.com', allowed).allowed).toBe(false);
+      expect(llmPermission('github.com', { ...allowed, llmConsent: false }).allowed).toBe(false);
+      expect(llmPermission('github.com', { ...allowed, llmApiKey: '' }).allowed).toBe(false);
     }
   });
 
@@ -137,7 +174,7 @@ describe('LLM provider', () => {
     const next = mergeSettings(glmUser, { llmProvider: 'gemini' });
 
     expect(next).toMatchObject({ llmProvider: 'gemini', llmConsent: false, llmApiKey: '' });
-    expect(isLlmAllowed('github.com', next)).toBe(false);
+    expect(llmPermission('github.com', next).allowed).toBe(false);
   });
 
   it('never carries the old key over, even when it is resubmitted with the change', () => {

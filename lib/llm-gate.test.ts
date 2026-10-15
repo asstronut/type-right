@@ -17,7 +17,7 @@ describe('createLlmGate', () => {
   let responses: (() => Response)[];
 
   function setup() {
-    return createLlmGate({ engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey) });
+    return createLlmGate({ engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey), settings: async () => settings });
   }
 
   /** The failure a check throws, or undefined when it succeeds. */
@@ -75,11 +75,17 @@ describe('createLlmGate', () => {
       },
     };
     const engine = (s: Settings) => createLlmEngine(s.llmProvider, s.llmApiKey);
+    const current = async () => settings;
     responses.push(() => new Response('{}', { status: 401 }));
-    await failureOf(createLlmGate({ engine, storage }).check('I am agree.', settings));
+    await failureOf(createLlmGate({ engine, settings: current, storage }).check('I am agree.', settings));
 
     const changes: unknown[] = [];
-    const restarted = createLlmGate({ engine, storage, onFailureChange: (failure) => changes.push(failure) });
+    const restarted = createLlmGate({
+      engine,
+      settings: current,
+      storage,
+      onFailureChange: (failure) => changes.push(failure),
+    });
     expect(await restarted.failure(settings)).toBe('no-key');
     expect(await failureOf(restarted.check('I am agree.', settings))).toBe('no-key');
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -93,6 +99,7 @@ describe('createLlmGate', () => {
     const changes: unknown[] = [];
     const gate = createLlmGate({
       engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
+      settings: async () => settings,
       onFailureChange: (failure) => changes.push(failure),
     });
     responses.push(() => new Response('oops', { status: 500 }));
@@ -104,7 +111,7 @@ describe('createLlmGate', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(await gate.failure(settings)).toBeUndefined();
-    expect(changes).toEqual([{ reason: 'bad-response', credentials: 'glm:test-key' }, undefined]);
+    expect(changes).toEqual(['bad-response', undefined]);
   });
 
   it.each([
@@ -118,6 +125,29 @@ describe('createLlmGate', () => {
 
     expect(await gate.failure(changed)).toBeUndefined();
     expect(await failureOf(gate.check('I am agree.', changed))).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a failure made with an old key: no announcement, and the next check asks the Provider at once', async () => {
+    let current = settings;
+    const changes: unknown[] = [];
+    const gate = createLlmGate({
+      engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
+      settings: async () => current,
+      onFailureChange: (failure) => changes.push(failure),
+    });
+    // The user saves a new key while the check is on its way.
+    responses.push(() => {
+      current = { ...settings, llmApiKey: 'new-key' };
+      return new Response('{}', { status: 401 });
+    });
+
+    const failed = await gate.check('I am agree.', settings).catch((error) => error);
+    expect(failed).toMatchObject({ failure: 'no-key', retryAfterMs: 0 });
+    expect(changes).toEqual([]);
+    expect(await gate.failure(current)).toBeUndefined();
+
+    expect(await failureOf(gate.check('I am agree.', current))).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

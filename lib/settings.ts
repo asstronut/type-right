@@ -138,20 +138,22 @@ export function normalizeUrl(value: unknown): string | undefined {
   }
 }
 
+/** What stands between text typed on a site and the LLM. */
+export type LlmDenial = 'no-consent' | 'excluded-site' | 'disabled-site' | 'no-key';
+
+export type LlmPermission = { allowed: true } | { allowed: false; reason: LlmDenial };
+
 /**
  * Whether text typed on `hostname` may be sent to the LLM: only with consent,
- * a key to send it with, and never on an excluded or disabled site.
+ * a key to send it with, and never on an excluded or disabled site. When
+ * several things are in the way, the first of consent, excluded site, key,
+ * disabled site is named, so a disabled site still reports what would stop the
+ * LLM with Type Right on.
  */
-export function isLlmAllowed(hostname: string, settings: Settings): boolean {
-  return (
-    settings.llmConsent &&
-    settings.llmApiKey !== '' &&
-    !isSiteExcluded(hostname, settings) &&
-    !isSiteDisabled(hostname, settings)
-  );
-}
-
-/** Identifies the Provider and key an LLM request is sent with, so a failure can be tied to them. */
-export function llmCredentials(settings: Settings): string {
-  return `${settings.llmProvider}:${settings.llmApiKey}`;
+export function llmPermission(hostname: string, settings: Settings): LlmPermission {
+  if (!settings.llmConsent) return { allowed: false, reason: 'no-consent' };
+  if (isSiteExcluded(hostname, settings)) return { allowed: false, reason: 'excluded-site' };
+  if (settings.llmApiKey === '') return { allowed: false, reason: 'no-key' };
+  if (isSiteDisabled(hostname, settings)) return { allowed: false, reason: 'disabled-site' };
+  return { allowed: true };
 }

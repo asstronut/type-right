@@ -30,13 +30,14 @@ export class HoverController {
   });
   private pending: Pending | null = null;
   private closeTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly listeners = new AbortController();
 
   constructor() {
     // The card is placed against the underline's viewport position, so it can't follow a page scroll.
     document.addEventListener('scroll', (event) => {
       if (!this.card.contains(event.target)) this.close();
-    }, true);
-    window.addEventListener('resize', () => this.close());
+    }, { capture: true, signal: this.listeners.signal });
+    window.addEventListener('resize', () => this.close(), { signal: this.listeners.signal });
   }
 
   /** Hovers `field`'s underlines until `signal` aborts. */
@@ -108,6 +109,14 @@ export class HoverController {
     this.cancelPending();
     this.cancelClose();
     this.card.hide();
+  }
+
+  /** Stops listening to the page and takes the card off it for good. */
+  destroy(): void {
+    this.listeners.abort();
+    this.cancelPending();
+    this.cancelClose();
+    this.card.destroy();
   }
 
   private scheduleClose(): void {

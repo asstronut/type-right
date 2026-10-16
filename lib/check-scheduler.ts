@@ -16,10 +16,11 @@ export interface CheckScheduler {
 export interface CheckSchedulerOptions {
   debounceMs: number;
   /**
-   * Whether the Engine may run at all, asked on every fire before any block's
-   * wait; on false the fire ends without rescheduling.
+   * Brings the Field in line with the Engine's gate (e.g. drops what it may no
+   * longer show) and says whether the Engine may run at all. Called on every
+   * fire before any block's wait; on false the fire ends without rescheduling.
    */
-  mayRun(): boolean;
+  prepareRun(): boolean;
   run(): Promise<void>;
 }
 
@@ -36,7 +37,7 @@ export function createCheckScheduler(options: CheckSchedulerOptions): CheckSched
 
   async function fire(): Promise<void> {
     timer = undefined;
-    if (disposed || !options.mayRun()) return;
+    if (disposed || !options.prepareRun()) return;
     const waitMs = blockedUntil - Date.now();
     if (waitMs > 0) return schedule(waitMs);
     if (running) return schedule();

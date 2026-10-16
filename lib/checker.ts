@@ -95,7 +95,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
 
   const languageTool = createCheckScheduler({
     debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
-    mayRun() {
+    prepareRun() {
       if (options.site && isSiteDisabled(options.site.hostname, options.site.settings())) {
         tracker.clearDirty();
         return false;
@@ -113,7 +113,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     llm &&
     createCheckScheduler({
       debounceMs: options.llmDebounceMs ?? DEFAULT_LLM_DEBOUNCE_MS,
-      mayRun() {
+      prepareRun() {
         if (!llm.health.mayCheck().allowed) {
           // Consent or the key withdrawn, or the site excluded or disabled, since the last check: drop what the LLM found.
           if (tracker.clearSlips('llm')) notify();

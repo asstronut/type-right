@@ -4,6 +4,8 @@ import { LLM_FAILURE_PAUSE_MS, LlmFailedError, RateLimitedError, type Engine } f
 import type { PageLlmHealth } from './llm-health';
 import type { LlmProviderId } from './llm-providers';
 import { isInDictionary, isSiteDisabled, type Settings } from './settings';
+import { createSlipTracker, type TextSpan } from './slip-tracker';
+import { createCheckScheduler } from './check-scheduler';
 
 export interface CheckEngines {
   languageTool: Engine;
@@ -79,118 +81,80 @@ const UNREACHED_RETRY_MS = 5_000;
 /** LanguageTool's free tier rejects requests over 20k characters. */
 const MAX_REQUEST_CHARS = 20_000;
 
-interface Range {
-  start: number;
-  end: number;
-}
-
+/**
+ * Connects a Field's Slip tracker to one check scheduler per Engine, and
+ * reports Slips to the Tally as their sentences settle.
+ */
 export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
-  const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
-  const llmDebounceMs = options.llmDebounceMs ?? DEFAULT_LLM_DEBOUNCE_MS;
-
-  let text = '';
-  let ltSlips: Slip[] = [];
-  let llmSlips: Slip[] = [];
-  /** Span of the text edited since it was last successfully checked. */
-  let dirty: Range | null = null;
-  let version = 0;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let running = false;
-  let blockedUntil = 0;
+  const tracker = createSlipTracker();
   let disposed = false;
-  let llmTimer: ReturnType<typeof setTimeout> | undefined;
-  let llmRunning = false;
-  let llmBlockedUntil = 0;
-  /** How long to wait after the next LLM check that never reaches the LLM. */
-  let unreachedRetryMs = UNREACHED_RETRY_MS;
+  /** Keys of the Slips already passed to `onSlipsSeen`. */
+  const reported = new Set<string>();
   /** LLM results by sentence text, so an unchanged sentence is never sent twice. */
-  const llmCache = new Map<string, Slip[]>();
-  /** The LLM provider the cached results came from. */
-  let llmCacheProvider: LlmProviderId | undefined;
+  const sentenceCache = createSentenceCache();
+
+  const languageTool = createCheckScheduler({
+    debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
+    prepareRun() {
+      if (options.site && isSiteDisabled(options.site.hostname, options.site.settings())) {
+        tracker.clearDirty();
+        return false;
+      }
+      return true;
+    },
+    run: () => checkDirtyParagraphs(),
+  });
+
   /** The LLM leg: its engine and the page's health, which the leg cannot run without. */
   const llm = options.engines.llm && options.llmHealth && { engine: options.engines.llm, health: options.llmHealth };
+  /** How long to wait after the next LLM check that never reaches the LLM. */
+  let unreachedRetryMs = UNREACHED_RETRY_MS;
+  const llmScheduler =
+    llm &&
+    createCheckScheduler({
+      debounceMs: options.llmDebounceMs ?? DEFAULT_LLM_DEBOUNCE_MS,
+      prepareRun() {
+        if (!llm.health.mayCheck().allowed) {
+          // Consent or the key withdrawn, or the site excluded or disabled, since the last check: drop what the LLM found.
+          if (tracker.clearSlips('llm')) notify();
+          return false;
+        }
+        // Another provider's answers would not be this one's.
+        sentenceCache.useProvider(options.site?.settings().llmProvider);
+        return true;
+      },
+      run: () => checkSentences(llm.engine),
+    });
   const stopWatchingLlmHealth = llm?.health.watch((health) => {
     if (disposed) return;
     // Slips held back for the LLM count now that it can't check their sentence.
     if (health.state === 'failing') reportSightings(slips());
     // The LLM works again, maybe after another field's check: no need to sit out this field's pause.
-    if (health.state === 'active' && llmBlockedUntil > Date.now()) {
-      llmBlockedUntil = 0;
-      scheduleLlm(0);
-    }
+    if (health.state === 'active') llmScheduler?.unblock();
   });
-  /** Ids of the Slips the user chose to ignore in this field. */
-  const ignored = new Set<string>();
-  /** Keys of the Slips already passed to `onSlipsSeen`. */
-  const reported = new Set<string>();
 
   function update(next: string): Slip[] {
-    if (next === text) return slips();
-
-    const edit = diff(text, next);
-    const follow = (list: Slip[]) =>
-      list
-        .filter((slip) => !touchesEdit(slip, edit, text, next))
-        .map((slip) => (slip.start >= edit.oldEnd ? shift(slip, edit.newEnd - edit.oldEnd) : slip));
-    ltSlips = follow(ltSlips);
-    llmSlips = follow(llmSlips);
-    dirty = unionRange(dirty && mapRange(dirty, edit), { start: edit.start, end: edit.newEnd });
-    text = next;
-    version++;
-    schedule(debounceMs);
-    if (llm) scheduleLlm(llmDebounceMs);
+    if (!tracker.applyEdit(next)) return slips();
+    languageTool.schedule();
+    llmScheduler?.schedule();
     return slips();
   }
 
-  /**
-   * The field's Slips from both engines, in text order. Where both flag the
-   * same words only the LLM's Slip is kept, for its clearer explanation.
-   * Spelling Slips on dictionary words are dropped before that merge, so they
-   * never hide another Slip; ignored Slips are dropped after it, so an
-   * ignored LLM Slip takes the LanguageTool Slips it replaced with it.
-   */
+  /** The tracker's merged Slips, with the Dictionary applied. */
   function slips(): Slip[] {
     const settings = options.site?.settings();
-    const withoutDictionaryWords = (list: Slip[]) =>
-      settings
-        ? list.filter((e) => !(e.kind === 'spelling' && isInDictionary(text.slice(e.start, e.end), settings)))
-        : list;
-    const lt = withoutDictionaryWords(ltSlips);
-    const llm = withoutDictionaryWords(llmSlips);
-    const unmatched = lt.filter((l) => !llm.some((m) => l.start < m.end && m.start < l.end));
-    return [...unmatched, ...llm].filter((slip) => !ignored.has(slip.id)).sort((a, b) => a.start - b.start);
+    return tracker.slips(settings && ((word) => isInDictionary(word, settings)));
   }
 
-  function schedule(delayMs: number): void {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => void fire(), delayMs);
-  }
-
-  async function fire(): Promise<void> {
-    timer = undefined;
-    if (disposed) return;
-    if (options.site && isSiteDisabled(options.site.hostname, options.site.settings())) {
-      dirty = null;
-      return;
-    }
-    const waitMs = blockedUntil - Date.now();
-    if (waitMs > 0) return schedule(waitMs);
-    if (running) return schedule(debounceMs);
-
-    running = true;
-    try {
-      await checkDirtyParagraphs();
-    } finally {
-      running = false;
-    }
-  }
-
+  /** Puts LanguageTool's Slips in place for each paragraph the dirty span touches. */
   async function checkDirtyParagraphs(): Promise<void> {
-    const startVersion = version;
+    const startVersion = tracker.version();
+    const dirty = tracker.dirty();
     if (!dirty) return;
 
+    const text = tracker.text();
     const targets = splitParagraphs(text).filter(
-      (paragraph) => paragraph.start <= dirty!.end && paragraph.end >= dirty!.start,
+      (paragraph) => paragraph.start <= dirty.end && paragraph.end >= dirty.start,
     );
 
     for (const paragraph of targets) {
@@ -201,99 +165,61 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
           found = await options.engines.languageTool.check(paragraphText);
         } catch (error) {
           if (error instanceof RateLimitedError) {
-            blockedUntil = Date.now() + Math.max(error.retryAfterMs ?? DEFAULT_RETRY_MS, MIN_RETRY_MS);
-            if (version === startVersion && dirty) dirty = { ...dirty, start: paragraph.start };
-            schedule(0);
+            // Re-check this paragraph once the block ends.
+            if (tracker.version() === startVersion) tracker.moveDirtyStart(paragraph.start);
+            languageTool.blockFor(Math.max(error.retryAfterMs ?? DEFAULT_RETRY_MS, MIN_RETRY_MS));
           }
           // Any other failure is left for the next edit to retry.
           return;
         }
         // The text moved on while we waited; the newer edit has its own check queued.
-        if (version !== startVersion || disposed) return;
+        if (tracker.version() !== startVersion || disposed) return;
       }
 
-      ltSlips = [
-        ...ltSlips.filter((e) => e.end < paragraph.start || e.start > paragraph.end),
-        ...found.map((e) => shift(e, paragraph.start)),
-      ];
-      dirty = dirty && dirty.end > paragraph.end ? { ...dirty, start: paragraph.end } : null;
+      tracker.replaceSlips('languagetool', paragraph, found, { dropTouching: true });
+      const left = tracker.dirty();
+      if (left && left.end > paragraph.end) tracker.moveDirtyStart(paragraph.end);
+      else tracker.clearDirty();
       notify();
     }
-    dirty = null;
+    tracker.clearDirty();
   }
 
-  function scheduleLlm(delayMs: number): void {
-    if (llmTimer) clearTimeout(llmTimer);
-    llmTimer = setTimeout(() => void fireLlm(), delayMs);
-  }
-
-  async function fireLlm(): Promise<void> {
-    llmTimer = undefined;
-    if (disposed || !llm) return;
-    if (!llm.health.mayCheck().allowed) {
-      // Consent or the key withdrawn, or the site excluded or disabled, since the last check: drop what the LLM found.
-      if (llmSlips.length) {
-        llmSlips = [];
-        notify();
-      }
-      return;
-    }
-    const provider = options.site?.settings().llmProvider;
-    if (provider !== llmCacheProvider) {
-      // Another provider's answers would not be this one's.
-      llmCache.clear();
-      llmCacheProvider = provider;
-    }
-    const waitMs = llmBlockedUntil - Date.now();
-    if (waitMs > 0) return scheduleLlm(waitMs);
-    if (llmRunning) return scheduleLlm(llmDebounceMs);
-
-    llmRunning = true;
-    try {
-      await checkSentences(llm.engine);
-    } finally {
-      llmRunning = false;
-    }
-  }
-
-  /** Puts each finished sentence's LLM Slips in place, asking the LLM only about uncached ones. */
-  async function checkSentences(llm: Engine): Promise<void> {
-    const startVersion = version;
+  /** Puts each Finished sentence's LLM Slips in place, asking the LLM only about uncached ones. */
+  async function checkSentences(engine: Engine): Promise<void> {
+    const startVersion = tracker.version();
+    const text = tracker.text();
     for (const sentence of finishedSentences(text)) {
       const sentenceText = text.slice(sentence.start, sentence.end);
-      let found = llmCache.get(sentenceText);
+      let found = sentenceCache.get(sentenceText);
       if (!found) {
         try {
-          found = await llm.check(sentenceText);
+          found = await engine.check(sentenceText);
         } catch (error) {
           if (error instanceof LlmFailedError) {
             // The worker's gate pauses the LLM after a failure, says for how long, and tells the page's LLM health why.
-            llmBlockedUntil = Date.now() + (error.retryAfterMs ?? LLM_FAILURE_PAUSE_MS);
+            llmScheduler!.blockFor(error.retryAfterMs ?? LLM_FAILURE_PAUSE_MS);
           } else {
             // The check never reached the LLM (the worker turned it away, or the page lost the worker), so the
             // LLM's health is unknown: try again soon, and less often while it keeps happening.
-            llmBlockedUntil = Date.now() + unreachedRetryMs;
+            llmScheduler!.blockFor(unreachedRetryMs);
             unreachedRetryMs = Math.min(unreachedRetryMs * 2, LLM_FAILURE_PAUSE_MS);
           }
-          scheduleLlm(0);
           return;
         }
         unreachedRetryMs = UNREACHED_RETRY_MS;
-        cacheLlmResult(sentenceText, found);
+        sentenceCache.set(sentenceText, found);
         // The text moved on; the newer edit has its own check queued, which will hit the cache.
-        if (version !== startVersion || disposed) return;
+        if (tracker.version() !== startVersion || disposed) return;
       }
 
-      llmSlips = [
-        ...llmSlips.filter((e) => e.end <= sentence.start || e.start >= sentence.end),
-        ...found.map((e) => shift(e, sentence.start)),
-      ];
+      tracker.replaceSlips('llm', sentence, found);
       notify();
     }
   }
 
   function ignore(id: string): Slip[] {
-    ignored.add(id);
+    tracker.ignore(id);
     return notify();
   }
 
@@ -305,13 +231,18 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     return current;
   }
 
+  /**
+   * Reports each Slip not reported before whose sentence is finished and,
+   * while the LLM is active, has been checked by it (so is in the sentence cache).
+   */
   function reportSightings(current: Slip[]): void {
     if (!options.onSlipsSeen) return;
     const waitForLlm = llm?.health.health().state === 'active';
+    const text = tracker.text();
     const sightings: SlipSighting[] = [];
     for (const sentence of finishedSentences(text)) {
       const sentenceText = text.slice(sentence.start, sentence.end);
-      if (waitForLlm && !llmCache.has(sentenceText)) continue;
+      if (waitForLlm && !sentenceCache.has(sentenceText)) continue;
       for (const slip of current) {
         if (slip.start < sentence.start || slip.end > sentence.end) continue;
         const key = makeSightingKey(slip.kind, sentenceText, text.slice(slip.start, slip.end));
@@ -323,76 +254,43 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (sightings.length) options.onSlipsSeen(sightings);
   }
 
-  /** Keeps the cache bounded on long-lived fields by forgetting the oldest sentence first. */
-  function cacheLlmResult(sentenceText: string, found: Slip[]): void {
-    llmCache.set(sentenceText, found);
-    if (llmCache.size > MAX_CACHED_SENTENCES) llmCache.delete(llmCache.keys().next().value!);
-  }
-
   function dispose(): void {
     disposed = true;
     stopWatchingLlmHealth?.();
-    if (timer) clearTimeout(timer);
-    if (llmTimer) clearTimeout(llmTimer);
+    languageTool.dispose();
+    llmScheduler?.dispose();
   }
 
   return { update, slips, ignore, forgetReported: () => reported.clear(), dispose };
 }
 
-interface Edit {
-  start: number;
-  oldEnd: number;
-  newEnd: number;
-}
-
-/** The smallest single span of `prev` that, when replaced, produces `next`. */
-function diff(prev: string, next: string): Edit {
-  const limit = Math.min(prev.length, next.length);
-  let start = 0;
-  while (start < limit && prev[start] === next[start]) start++;
-  let suffix = 0;
-  while (
-    suffix < limit - start &&
-    prev[prev.length - 1 - suffix] === next[next.length - 1 - suffix]
-  ) {
-    suffix++;
-  }
-  return { start, oldEnd: prev.length - suffix, newEnd: next.length - suffix };
-}
-
-function isWordChar(char: string | undefined): boolean {
-  return char !== undefined && /[\p{L}\p{N}_'’]/u.test(char);
-}
-
 /**
- * Whether the edit changes the words a Slip covers. An edit that merely
- * touches its edge only counts when it joins onto the word (typing a letter
- * right after it), not when it follows it (typing a space).
+ * The LLM's Slips by sentence text, for one Provider at a time. Keeps itself
+ * bounded on long-lived fields by forgetting the oldest sentence first.
  */
-function touchesEdit(slip: Slip, edit: Edit, prev: string, next: string): boolean {
-  if (slip.end < edit.start || slip.start > edit.oldEnd) return false;
-  if (slip.end > edit.start && slip.start < edit.oldEnd) return true;
-  if (slip.end === edit.start) return isWordChar(prev[edit.start]) || isWordChar(next[edit.start]);
-  return isWordChar(prev[edit.oldEnd - 1]) || isWordChar(next[edit.newEnd - 1]);
-}
-
-function shift(slip: Slip, by: number): Slip {
-  return by === 0 ? slip : { ...slip, start: slip.start + by, end: slip.end + by };
-}
-
-function mapRange(range: Range, edit: Edit): Range {
-  const map = (pos: number) =>
-    pos <= edit.start ? pos : pos >= edit.oldEnd ? pos + edit.newEnd - edit.oldEnd : edit.newEnd;
-  return { start: map(range.start), end: map(range.end) };
-}
-
-function unionRange(a: Range | null, b: Range): Range {
-  return a ? { start: Math.min(a.start, b.start), end: Math.max(a.end, b.end) } : b;
+function createSentenceCache() {
+  const cache = new Map<string, Slip[]>();
+  /** The Provider the cached results came from. */
+  let cacheProvider: LlmProviderId | undefined;
+  return {
+    get: (sentenceText: string) => cache.get(sentenceText),
+    has: (sentenceText: string) => cache.has(sentenceText),
+    set(sentenceText: string, found: Slip[]): void {
+      cache.set(sentenceText, found);
+      if (cache.size > MAX_CACHED_SENTENCES) cache.delete(cache.keys().next().value!);
+    },
+    /** Empties the cache when `provider` is not the one its results came from. */
+    useProvider(provider: LlmProviderId | undefined): void {
+      if (provider === cacheProvider) return;
+      cache.clear();
+      cacheProvider = provider;
+    },
+  };
 }
 
 /** Paragraphs are separated by blank lines; oversized ones are cut to fit one request. */
-function splitParagraphs(text: string): Range[] {
-  const paragraphs: Range[] = [];
+function splitParagraphs(text: string): TextSpan[] {
+  const paragraphs: TextSpan[] = [];
   let start = 0;
   const push = (end: number) => {
     for (let from = start; ; ) {
@@ -418,14 +316,14 @@ const SENTENCE_END = /[.?!]/;
 const CLOSERS = /[.?!"'”’)\]]/;
 
 /**
- * The finished sentences, ready for the LLM and the Tally: those
+ * The Finished sentences, ready for the LLM and the Tally: those
  * ending in `.`, `?` or `!` (plus any closing quotes or brackets) followed by
  * whitespace or the end of the text, and the unpunctuated end of any line a
  * line break has finished, without trailing whitespace. A sentence never spans
  * a line break, so only the unfinished last line is skipped.
  */
-function finishedSentences(text: string): Range[] {
-  const sentences: Range[] = [];
+function finishedSentences(text: string): TextSpan[] {
+  const sentences: TextSpan[] = [];
   let start = -1;
   for (let i = 0; i < text.length; i++) {
     const char = text[i]!;

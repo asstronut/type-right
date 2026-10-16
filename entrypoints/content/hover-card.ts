@@ -194,6 +194,12 @@ export class HoverCard {
     this.root.querySelector('.card')?.remove();
   }
 
+  /** Takes the card off the page for good. */
+  destroy(): void {
+    this.hide();
+    this.host.remove();
+  }
+
   contains(node: EventTarget | null): boolean {
     return node instanceof Node && this.host.contains(node);
   }

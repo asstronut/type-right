@@ -13,7 +13,7 @@ export interface Settings {
   llmProvider: LlmProviderId;
   /** API key for the LLM engine's provider; empty until the user enters one. */
   llmApiKey: string;
-  /** Whether the user accepted, on the Consent page, that text is sent to `llmProvider`. */
+  /** Whether the user accepted, on the setup page, that text is sent to `llmProvider`. */
   llmConsent: boolean;
   englishVariant: EnglishVariant;
   mixedInLanguage: MixedInLanguage;
@@ -60,7 +60,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
 
 /**
  * `current` with `changes` applied. Changing the LLM provider revokes consent
- * (the user must accept the new recipient on the Consent page) and drops the
+ * (the user must accept the new recipient on the setup page) and drops the
  * old key, so neither text nor a key reaches a provider it wasn't meant for.
  */
 export function mergeSettings(current: Settings, changes: Partial<Settings>): Settings {

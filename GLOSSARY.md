@@ -74,7 +74,7 @@ The language the user mixes into their English when they don't know the English 
 _Avoid_: second language, native language
 
 **Consent**:
-The user's acceptance that their text goes to the current Provider. Without it there are no LLM calls.
+The user's acceptance that their text goes to the current Provider, given on the setup page together with that Provider's API key. Without it there are no LLM calls.
 
 ### Learning
 

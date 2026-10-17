@@ -5,12 +5,14 @@ export type LlmProviderId = 'glm' | 'gemini';
  * OpenAI-compatible chat completions request with a Bearer API key.
  */
 export interface LlmProvider {
-  /** Name shown on the Options and Consent pages. */
+  /** Name shown on the Options and setup pages. */
   name: string;
   /** Who receives the text and where they operate, in plain words for the disclosure. */
   recipient: string;
-  /** The kind of key the user should paste, for the Options page hint. */
+  /** The kind of key the user should paste, for the Options and setup page hints. */
   keyName: string;
+  /** Where the user creates that key, linked from the setup page. */
+  keyUrl: string;
   apiUrl: string;
   model: string;
   /** Asked once instead when `model` is overloaded. */
@@ -28,6 +30,7 @@ export const LLM_PROVIDERS: Record<LlmProviderId, LlmProvider> = {
     name: 'GLM',
     recipient: 'Zhipu AI / Z.ai, a provider in China',
     keyName: 'a GLM (Z.ai) API key',
+    keyUrl: 'https://z.ai/manage-apikey/apikey-list',
     apiUrl: 'https://api.z.ai/api/paas/v4/chat/completions',
     model: 'glm-4.7-flash',
     fallbackModel: 'glm-4.5-flash',
@@ -40,6 +43,7 @@ export const LLM_PROVIDERS: Record<LlmProviderId, LlmProvider> = {
     name: 'Google Gemini',
     recipient: 'Google, a provider in the United States',
     keyName: 'a Gemini API key from Google AI Studio',
+    keyUrl: 'https://aistudio.google.com/apikey',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     model: 'gemini-3.8-flash',
     fallbackModel: 'gemini-3.5-flash-lite',

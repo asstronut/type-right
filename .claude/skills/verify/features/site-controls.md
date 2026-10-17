@@ -26,6 +26,6 @@ Preconditions:
 
 ## Gotchas
 
-- `site-popup-buttons` cannot be driven here. The Popup reads the current tab through the `activeTab` permission, which only a real toolbar click grants. `V popup` (`chrome.action.openPopup()`) and `V open popup` both show `This page`, `Type Right does not run on this page.` and disabled buttons. Report this sub-feature as not verified, and drive the lists through Options.
+- `site-popup-buttons` is driven with `V popup`, which opens the real Popup over the test page. `#site` reads `127.0.0.1`; `V click '#exclude' --tab popup` adds it to `excludedSites`. `V open popup` opens the Popup in its own tab, where the current tab is the Popup itself, so it shows `This page` and disabled buttons.
 - On a disabled site, `slips` prints `[]` because there is no overlay at all. Check the overlay count, not just the empty list.
 - `site-exclude` has not been driven yet. Fix these steps once it has been run.

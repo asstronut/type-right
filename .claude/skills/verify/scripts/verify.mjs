@@ -29,12 +29,13 @@ const LLM_URL_PATTERNS = ['https://api.z.ai/*', 'https://generativelanguage.goog
 function usage() {
   console.log(`usage: node .claude/skills/verify/scripts/verify.mjs <command>
 
-  launch                         build, start test page + headless Edge with the extension
+  launch [--dark]                build, start test page + headless Edge with the extension (--dark: prefers-color-scheme dark)
   doctor                         read-only health check of the running instance
   tabs                           list open tabs
   open <options|popup|consent|url>  open a new tab
-  type <text> [--field N] [--clear]   click textarea N (0-based) and type real keystrokes (\\n = Enter)
-  keys <text>                    type real keystrokes into whatever has focus in the tab (\\n = Enter)
+  type <text> [--field N | --selector <css>] [--clear]
+                                 click textarea N (0-based), or the element matching <css>,
+                                 and type real keystrokes (\\n = Enter)
   press <key>                    press ArrowDown, ArrowUp, Enter, Escape or Tab in the tab
   value [--field N]              print the textarea's value
   slips [--field N] [--wait <text>] [--timeout ms]  print underlined Slips (waits for <text> if given)
@@ -357,7 +358,7 @@ async function launch() {
   fs.mkdirSync(evidenceDir, { recursive: true });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'type-right-verify-'));
   // Saved after every process starts, so `cleanup` can stop whatever a failed launch left behind.
-  const state = { profile, edgePath, evidenceDir, extId: null, startedAt: new Date().toISOString() };
+  const state = { profile, edgePath, evidenceDir, dark: bool('dark'), extId: null, startedAt: new Date().toISOString() };
   const save = () => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   save();
   try {
@@ -392,6 +393,7 @@ async function start(state, save) {
     `--disable-extensions-except=${EXT_DIR}`,
     `--load-extension=${EXT_DIR}`,
     '--window-size=1280,900',
+    ...(state.dark ? ['--force-dark-mode'] : []),
     testPage,
   ], { detached: true, stdio: 'ignore', windowsHide: true });
   edge.unref();
@@ -616,13 +618,23 @@ const commands = {
   }),
 
   type: () => withTab(async (state, cdp) => {
+    const selector = flag('selector');
     const n = field();
     const clear = bool('clear');
     const text = (argv[0] ?? die('type <text>')).replace(/\\n/g, '\n');
     const page = await tab(cdp, state);
-    await page.eval(`${FIELD_JS(n)}?.scrollIntoView({ block: 'center' })`);
-    const p = await probe(page, n);
-    await mouseClick(page, p.field.x, p.field.y);
+    if (selector) {
+      const { root } = await page.send('DOM.getDocument', { depth: 0 });
+      const { nodeId } = await page.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+      if (!nodeId) die(`No element matches ${selector}`);
+      await page.send('DOM.scrollIntoViewIfNeeded', { nodeId });
+      const { x, y } = await centerOf(page, nodeId);
+      await mouseClick(page, x, y);
+    } else {
+      await page.eval(`${FIELD_JS(n)}?.scrollIntoView({ block: 'center' })`);
+      const p = await probe(page, n);
+      await mouseClick(page, p.field.x, p.field.y);
+    }
     if (clear) {
       await key(page, { key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, commands: ['selectAll'] }, 2);
       await key(page, { key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
@@ -630,16 +642,19 @@ const commands = {
       await key(page, { key: 'End', code: 'End', windowsVirtualKeyCode: 35, commands: ['moveToEndOfDocument'] }, 2);
     }
     await typeText(page, text);
-    out(state, `type ${JSON.stringify(text)} --field ${n}${clear ? ' --clear' : ''}`, { value: (await probe(page, n)).value });
+    if (!selector) {
+      out(state, `type ${JSON.stringify(text)} --field ${n}${clear ? ' --clear' : ''}`, { value: (await probe(page, n)).value });
+      return;
+    }
+    // A password field reports only its length, so a real API key never reaches log.jsonl.
+    const typed = await page.eval(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      return el.type === 'password' ? { length: el.value.length } : { value: el.value };
+    })()`);
+    const shown = typed.length === undefined ? JSON.stringify(text) : `<${text.length} chars>`;
+    out(state, `type ${shown} --selector ${selector}${clear ? ' --clear' : ''}`, typed);
   }),
 
-  keys: () => withTab(async (state, cdp) => {
-    const text = (argv[0] ?? die('keys <text>')).replace(/\\n/g, '\n');
-    const page = await tab(cdp, state);
-    await typeText(page, text);
-    const focused = await page.eval(`(() => { const e = document.activeElement; return e && { name: e.name, value: e.type === 'password' ? '(hidden)' : e.value }; })()`);
-    out(state, `keys ${focused?.value === '(hidden)' ? '(hidden)' : JSON.stringify(text)} --tab ${page.url}`, { focused });
-  }),
 
   press: () => withTab(async (state, cdp) => {
     const name = argv[0] ?? die(`press <${Object.keys(NAMED_KEYS).join('|')}>`);

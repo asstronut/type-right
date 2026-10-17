@@ -1,6 +1,7 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
+import type { ScriptPublicPath } from 'wxt/utils/inject-script';
 import { LlmFailedError, RateLimitedError } from '../lib/engine';
 import { createLlmEngine } from '../lib/engines/llm';
 import { createLanguageToolEngine } from '../lib/engines/language-tool';
@@ -19,9 +20,10 @@ import { store } from '../lib/store';
 
 export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(async ({ reason }) => {
-    if (reason !== 'install') return;
-    if ((await store.getSettings()).llmConsent) return;
-    await browser.tabs.create({ url: browser.runtime.getURL('/consent.html') });
+    if (reason === 'install' && !(await store.getSettings()).llmConsent) {
+      await browser.tabs.create({ url: browser.runtime.getURL('/consent.html') });
+    }
+    if (reason === 'install' || reason === 'update') await injectIntoOpenTabs();
   });
 
   /** Tally updates run one after another, so concurrent fields, tabs and the Popup never overwrite each other's counts. */
@@ -64,6 +66,26 @@ export default defineBackground(() => {
     }
   });
 });
+
+/**
+ * Chrome only runs manifest content scripts in pages loaded after install, so
+ * tabs already open would get no checking until reloaded. A tab that still has
+ * the previous version's script is fine: the new one invalidates it. Pages the
+ * extension may not script (browser pages, the web store) reject, and are skipped.
+ */
+async function injectIntoOpenTabs(): Promise<void> {
+  const scripts = browser.runtime.getManifest().content_scripts ?? [];
+  const tabs = await browser.tabs.query({});
+  await Promise.allSettled(
+    tabs.flatMap(({ id: tabId }) =>
+      tabId === undefined
+        ? []
+        : scripts.map(({ js = [], all_frames }) =>
+            browser.scripting.executeScript({ target: { tabId, allFrames: all_frames }, files: js as ScriptPublicPath[] }),
+          ),
+    ),
+  );
+}
 
 /** Sends `message` to every frame of every tab; tabs without Type Right ignore it. */
 async function broadcast(message: LlmFailureMessage): Promise<void> {

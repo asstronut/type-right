@@ -1,0 +1,5 @@
+﻿::highlight(tr-spelling) { text-decoration: underline wavy #e11d48; text-decoration-thickness: 2px; text-underline-offset: 3px; text-decoration-skip-ink: none; }
+::highlight(tr-grammar) { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-color: #2563eb; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+::highlight(tr-wording) { text-decoration: underline wavy #7c3aed 2px; text-underline-offset: 3px; }
+::highlight(tr-translation) { text-decoration: underline wavy #0f766e 2px; text-underline-offset: 3px; }
+

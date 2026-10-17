@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>probe</title>
+<style>
+  body { font: 20px/1.6 system-ui, sans-serif; margin: 20px; background: #fff; }
+  .ed { border: 1px solid #ccc; padding: 8px; width: 700px; margin-bottom: 14px; }
+  #scroller { height: 60px; overflow: auto; }
+</style></head>
+<body>
+<div id="ed" class="ed" contenteditable="true"><p id="p1">Thiss is a sentense <b>with</b> wordy wording and kucing here.</p></div>
+<div id="host" class="ed"></div>
+<div id="scroller" class="ed" contenteditable="true"><p>line one</p><p>line two</p><p>line three</p><p id="far">mispeled word down here</p></div>
+<textarea id="ta" class="ed" rows="2" style="font: 20px/1.6 system-ui, sans-serif">A textarea with a speling slip</textarea>
+<div id="spell" class="ed" contenteditable="true" spellcheck="true">nativ spellcheck overlap tesst</div>
+<script>
+  const root = document.getElementById('host').attachShadow({ mode: 'open' });
+  root.innerHTML = '<div contenteditable="true" id="inner">Shadoww editor text</div>';
+  window.pageSaw = () => ({ size: CSS.highlights.size, keys: [...CSS.highlights.keys()] });
+</script>
+</body></html>

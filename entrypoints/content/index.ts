@@ -46,6 +46,8 @@ const backgroundLlmFailure: LlmFailureLink = {
 export default defineContentScript({
   matches: ['<all_urls>'],
   async main(ctx) {
+    // A script injected into a frozen tab runs when the tab wakes, which may be after the extension reloaded again.
+    if (ctx.isInvalid) return;
     runPage({
       ctx,
       hostname: location.hostname,

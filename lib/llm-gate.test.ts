@@ -17,7 +17,7 @@ describe('createLlmGate', () => {
   let responses: (() => Response)[];
 
   function setup() {
-    return createLlmGate({ engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey), settings: async () => settings });
+    return createLlmGate({ engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey, s.mixedInLanguage), settings: async () => settings });
   }
 
   /** The failure a check throws, or undefined when it succeeds. */
@@ -74,7 +74,7 @@ describe('createLlmGate', () => {
         saved = value;
       },
     };
-    const engine = (s: Settings) => createLlmEngine(s.llmProvider, s.llmApiKey);
+    const engine = (s: Settings) => createLlmEngine(s.llmProvider, s.llmApiKey, s.mixedInLanguage);
     const current = async () => settings;
     responses.push(() => new Response('{}', { status: 401 }));
     await failureOf(createLlmGate({ engine, settings: current, storage }).check('I am agree.', settings));
@@ -98,7 +98,7 @@ describe('createLlmGate', () => {
   it('asks the Provider again after the pause, and announces the failure and the recovery', async () => {
     const changes: unknown[] = [];
     const gate = createLlmGate({
-      engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
+      engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey, s.mixedInLanguage),
       settings: async () => settings,
       onFailureChange: (failure) => changes.push(failure),
     });
@@ -132,7 +132,7 @@ describe('createLlmGate', () => {
     let current = settings;
     const changes: unknown[] = [];
     const gate = createLlmGate({
-      engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
+      engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey, s.mixedInLanguage),
       settings: async () => current,
       onFailureChange: (failure) => changes.push(failure),
     });

@@ -3,6 +3,11 @@ import { DEFAULT_LLM_PROVIDER, isLlmProviderId, type LlmProviderId } from './llm
 
 export type EnglishVariant = 'en-US' | 'en-GB';
 
+export const MIXED_IN_LANGUAGES = ['none', 'indonesian'] as const;
+
+/** A language the user mixes into their English, whose words the LLM reports as Translation Slips. */
+export type MixedInLanguage = (typeof MIXED_IN_LANGUAGES)[number];
+
 export interface Settings {
   /** Which LLM provider receives finished sentences. */
   llmProvider: LlmProviderId;
@@ -11,6 +16,7 @@ export interface Settings {
   /** Whether the user accepted, on the Consent page, that text is sent to `llmProvider`. */
   llmConsent: boolean;
   englishVariant: EnglishVariant;
+  mixedInLanguage: MixedInLanguage;
   languageToolUrl: string;
   /** Sites whose text is never sent to the LLM (LanguageTool still runs). */
   excludedSites: string[];
@@ -27,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   llmApiKey: '',
   llmConsent: false,
   englishVariant: 'en-US',
+  mixedInLanguage: 'none',
   languageToolUrl: DEFAULT_LANGUAGE_TOOL_URL,
   excludedSites: [],
   disabledSites: [],
@@ -41,6 +48,9 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     llmApiKey: typeof value.llmApiKey === 'string' ? value.llmApiKey.trim() : DEFAULT_SETTINGS.llmApiKey,
     llmConsent: value.llmConsent === true,
     englishVariant: value.englishVariant === 'en-GB' || value.englishVariant === 'en-US' ? value.englishVariant : DEFAULT_SETTINGS.englishVariant,
+    mixedInLanguage: (MIXED_IN_LANGUAGES as readonly unknown[]).includes(value.mixedInLanguage)
+      ? value.mixedInLanguage!
+      : DEFAULT_SETTINGS.mixedInLanguage,
     languageToolUrl: normalizeUrl(value.languageToolUrl) ?? DEFAULT_LANGUAGE_TOOL_URL,
     excludedSites: normalizeSites(value.excludedSites),
     disabledSites: normalizeSites(value.disabledSites),

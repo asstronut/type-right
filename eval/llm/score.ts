@@ -1,4 +1,5 @@
 import { wholeWordOccurrences } from '../../lib/engines/llm';
+import type { SlipKind } from '../../lib/slips';
 
 /** A Slip the LLM should find, as the words it covers. */
 export interface ExpectedSlip {
@@ -6,6 +7,8 @@ export interface ExpectedSlip {
   quote: string;
   /** Which whole-word occurrence of `quote`, when it appears more than once. Defaults to 0. */
   nth?: number;
+  /** The Kind it should be reported as, when that is the point of the case. */
+  kind?: SlipKind;
   /** What a native speaker would write instead; for reading the results only. */
   correction: string;
 }
@@ -23,10 +26,17 @@ export interface Span {
   end: number;
 }
 
+/** A Slip the LLM reported, as the words it covers. */
+export interface ReportedSlip extends Span {
+  kind?: SlipKind;
+}
+
 export interface CaseScore {
   /** Expected Slips that some reported Slip overlaps. */
   found: ExpectedSlip[];
   missed: ExpectedSlip[];
+  /** Found Slips with an expected Kind that no overlapping reported Slip has. */
+  wrongKind: ExpectedSlip[];
   /** Reported Slips that overlap no expected Slip. */
   falsePositives: number;
   /** Reported Slips that overlap an earlier reported Slip: more than one correction for the same words. */
@@ -43,12 +53,16 @@ export function spanOf(sentence: string, expected: ExpectedSlip): Span {
   return { start, end: start + expected.quote.length };
 }
 
-export function scoreCase(fixture: FixtureCase, reported: Span[]): CaseScore {
+export function scoreCase(fixture: FixtureCase, reported: ReportedSlip[]): CaseScore {
   const expectedSpans = fixture.expected.map((e) => spanOf(fixture.sentence, e));
-  const found = fixture.expected.filter((_, i) => reported.some((r) => overlaps(r, expectedSpans[i]!)));
+  const overlapping = (i: number) => reported.filter((r) => overlaps(r, expectedSpans[i]!));
+  const found = fixture.expected.filter((_, i) => overlapping(i).length > 0);
   return {
     found,
     missed: fixture.expected.filter((e) => !found.includes(e)),
+    wrongKind: fixture.expected.filter(
+      (e, i) => found.includes(e) && e.kind !== undefined && !overlapping(i).some((r) => r.kind === e.kind),
+    ),
     falsePositives: reported.filter((r) => !expectedSpans.some((e) => overlaps(r, e))).length,
     overlapping: reported.filter((r, i) => reported.slice(0, i).some((earlier) => overlaps(r, earlier))).length,
   };

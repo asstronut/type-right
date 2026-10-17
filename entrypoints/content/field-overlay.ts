@@ -34,6 +34,7 @@ export const KIND_COLORS: Record<Slip['kind'], string> = {
   spelling: '#e11d48',
   grammar: '#2563eb',
   wording: '#7c3aed',
+  translation: '#0f766e',
 };
 
 const LT_STILL_WORKS = 'LanguageTool underlines keep working.';

@@ -13,7 +13,12 @@ const exclude = document.querySelector<HTMLButtonElement>('#exclude')!;
 const disable = document.querySelector<HTMLButtonElement>('#disable')!;
 const siteHint = document.querySelector<HTMLParagraphElement>('#siteHint')!;
 
-const KIND_LABELS: Record<SlipKind, string> = { spelling: 'Spelling', grammar: 'Grammar', wording: 'Wording' };
+const KIND_LABELS: Record<SlipKind, string> = {
+  spelling: 'Spelling',
+  grammar: 'Grammar',
+  wording: 'Wording',
+  translation: 'Translation',
+};
 
 /** Each kind with its total, then its type labels with their counts; kinds and types most frequent first. */
 function renderTally(tally: SlipTally): void {

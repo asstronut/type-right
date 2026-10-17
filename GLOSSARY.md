@@ -15,7 +15,7 @@ One language mistake flagged on a span of a Field's text. It has a Kind, a Type,
 _Avoid_: error (that means a failure in the code or app), issue, match, problem, mistake
 
 **Kind**:
-One of three fixed groups a Slip belongs to: **spelling** (red), **grammar** (blue), **wording** (purple). It sets the underline color.
+One of four fixed groups a Slip belongs to: **spelling** (red), **grammar** (blue), **wording** (purple), **translation** (teal). It sets the underline color.
 _Avoid_: category, severity
 
 **Type**:
@@ -25,6 +25,10 @@ _Avoid_: rule, kind (it's not one)
 **Wording**:
 The Kind for text that is correct but sounds unnatural to a native speaker. Only the LLM reports it.
 _Avoid_: style, phrasing, unnatural
+
+**Translation**:
+The Kind for a word or phrase in the Mixed-in language. Its explanation says what the words mean; its answer is the English that fits there. Only the LLM reports it, and only while a Mixed-in language is set.
+_Avoid_: foreign word, non-English
 
 **Engine**:
 A service that finds Slips in text. There are two: LanguageTool and the LLM.
@@ -65,6 +69,10 @@ _Avoid_: blocked site
 A site where Type Right is completely off: no checking, no underlines.
 _Avoid_: excluded site (that's a different list)
 
+**Mixed-in language**:
+The language the user mixes into their English when they don't know the English word yet: None (the default) or Indonesian. While it is set, the LLM reports its words as Translation Slips.
+_Avoid_: second language, native language
+
 **Consent**:
 The user's acceptance that their text goes to the current Provider. Without it there are no LLM calls.
 
@@ -75,7 +83,7 @@ The card that opens when the pointer rests on an underline. It shows the Slip's 
 _Avoid_: tooltip, popup (that's the Popup)
 
 **Apply**:
-Replaces a Slip's text with the suggested fix in one click. Only spelling Slips offer it; grammar and wording you retype yourself.
+Replaces a Slip's text with the suggested fix in one click. Only spelling Slips offer it; grammar, wording and translation you retype yourself.
 
 **Tally**:
 The Popup's counts of distinct Slips, by Kind and then by Type. Each distinct Slip counts once, after its sentence is finished.

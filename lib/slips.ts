@@ -1,4 +1,4 @@
-export const SLIP_KINDS = ['spelling', 'grammar', 'wording'] as const;
+export const SLIP_KINDS = ['spelling', 'grammar', 'wording', 'translation'] as const;
 
 export type SlipKind = (typeof SLIP_KINDS)[number];
 

@@ -1,6 +1,7 @@
 import { SLIP_KINDS, makeSlipId, type Slip, type SlipKind } from '../slips';
 import { LlmFailedError, type Engine } from '../engine';
 import { LLM_PROVIDERS, type LlmProvider, type LlmProviderId } from '../llm-providers';
+import type { MixedInLanguage } from '../settings';
 
 const SYSTEM_PROMPT = `You check one English sentence written by a non-native speaker.
 Find spelling mistakes, grammar mistakes, and wording that is grammatically correct but that a native speaker would not use.
@@ -16,6 +17,24 @@ Reply with JSON only, no other text, in exactly this shape:
 - correction: the text that should replace quote.
 
 If the sentence has no mistakes, reply {"errors":[]}.`;
+
+/** Added to the prompt for each language the user may mix into their English. */
+const MIXED_IN_SECTIONS: Record<Exclude<MixedInLanguage, 'none'>, string> = {
+  indonesian: `The writer also mixes Indonesian into their English, for words they don't know in English yet. This includes informal Indonesian and slang, such as gue, gak, banget, ngecek, and the suffix -nya.
+Report each Indonesian word or phrase as its own entry with kind "translation", never as a spelling, grammar or wording mistake:
+- quote: the Indonesian word or phrase, copied exactly. Keep neighbouring Indonesian words together as one phrase, but split a long Indonesian stretch where its parts translate separately. Include an English word next to it only if that word must change too (e.g. "already ngecek" becomes "already checked").
+- type: "Indonesian word" or "Indonesian phrase". Never put the English meaning in type.
+- explanation: what the Indonesian means, in simple English.
+- correction: the English that fits that spot, so the whole sentence reads naturally.
+English words inside an Indonesian phrase, such as "meeting", "deadline" or "error", belong to the phrase; an English word with an Indonesian suffix, such as "deadline-nya", is quoted whole.
+Keep checking the English parts of the sentence for spelling, grammar and wording mistakes as above.`,
+};
+
+/** The prompt, and the Kinds accepted in the reply, for the language mixed into the English. */
+function instructions(mixedIn: MixedInLanguage): { prompt: string; kinds: readonly SlipKind[] } {
+  if (mixedIn === 'none') return { prompt: SYSTEM_PROMPT, kinds: SLIP_KINDS.filter((kind) => kind !== 'translation') };
+  return { prompt: `${SYSTEM_PROMPT}\n\n${MIXED_IN_SECTIONS[mixedIn]}`, kinds: SLIP_KINDS };
+}
 
 interface ChatCompletion {
   choices?: { message?: { content?: string } }[];
@@ -33,17 +52,19 @@ interface LlmSlip {
 const TIMEOUT_MS = 8_000;
 
 /**
- * The LLM engine for `providerId`, sending each sentence with `apiKey`. Every
- * failure is thrown as an LlmFailedError saying why.
+ * The LLM engine for `providerId`, sending each sentence with `apiKey`. With a
+ * `mixedIn` language, its words come back as Translation Slips. Every failure
+ * is thrown as an LlmFailedError saying why.
  */
-export function createLlmEngine(providerId: LlmProviderId, apiKey: string): Engine {
+export function createLlmEngine(providerId: LlmProviderId, apiKey: string, mixedIn: MixedInLanguage): Engine {
   const provider = LLM_PROVIDERS[providerId];
+  const { prompt, kinds } = instructions(mixedIn);
   return {
     async check(sentence: string): Promise<Slip[]> {
       const timeout = new AbortController();
       const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS);
       try {
-        return await checkWithin(provider, apiKey, sentence, timeout.signal);
+        return await checkWithin({ provider, apiKey, prompt, kinds }, sentence, timeout.signal);
       } catch (error) {
         if (error instanceof LlmFailedError) throw error;
         if (timeout.signal.aborted) throw new LlmFailedError('timeout');
@@ -56,15 +77,19 @@ export function createLlmEngine(providerId: LlmProviderId, apiKey: string): Engi
   };
 }
 
-async function checkWithin(
-  provider: LlmProvider,
-  apiKey: string,
-  sentence: string,
-  signal: AbortSignal,
-): Promise<Slip[]> {
-  let response = await request(provider, apiKey, provider.model, sentence, signal);
+/** What every request of one engine is sent with, and the Kinds its replies may use. */
+interface EngineConfig {
+  provider: LlmProvider;
+  apiKey: string;
+  prompt: string;
+  kinds: readonly SlipKind[];
+}
+
+async function checkWithin(config: EngineConfig, sentence: string, signal: AbortSignal): Promise<Slip[]> {
+  const { provider } = config;
+  let response = await request(config, provider.model, sentence, signal);
   if (await provider.isOverloaded(response)) {
-    response = await request(provider, apiKey, provider.fallbackModel, sentence, signal);
+    response = await request(config, provider.fallbackModel, sentence, signal);
     // Overloaded too: the provider is struggling, which is not this key's quota.
     if (await provider.isOverloaded(response)) throw new LlmFailedError('bad-response');
   }
@@ -75,12 +100,11 @@ async function checkWithin(
 
   const choices = ((await response.json()) as ChatCompletion | null)?.choices;
   if (!Array.isArray(choices)) throw new LlmFailedError('bad-response');
-  return locateSlips(sentence, parseSlips(choices[0]?.message?.content));
+  return locateSlips(sentence, parseSlips(choices[0]?.message?.content, config.kinds));
 }
 
 function request(
-  provider: LlmProvider,
-  apiKey: string,
+  { provider, apiKey, prompt }: EngineConfig,
   model: string,
   sentence: string,
   signal: AbortSignal,
@@ -92,7 +116,7 @@ function request(
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: prompt },
         { role: 'user', content: sentence },
       ],
       temperature: 0.1,
@@ -102,8 +126,8 @@ function request(
   });
 }
 
-/** The well-formed Slips in the model's reply; a reply that isn't valid JSON yields none. */
-function parseSlips(content: string | undefined): LlmSlip[] {
+/** The well-formed Slips of `kinds` in the model's reply; a reply that isn't valid JSON yields none. */
+function parseSlips(content: string | undefined, kinds: readonly SlipKind[]): LlmSlip[] {
   if (!content) return [];
   let data: unknown;
   try {
@@ -120,7 +144,7 @@ function parseSlips(content: string | undefined): LlmSlip[] {
       e !== null &&
       typeof e.quote === 'string' &&
       e.quote.length > 0 &&
-      (SLIP_KINDS as readonly unknown[]).includes(e.kind) &&
+      (kinds as readonly unknown[]).includes(e.kind) &&
       typeof e.type === 'string' &&
       typeof e.explanation === 'string' &&
       typeof e.correction === 'string',

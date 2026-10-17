@@ -15,6 +15,8 @@ const LLM_DEBOUNCE_MS = 1500;
 const KNOWN_MISTAKES = {
   recieve: { issueType: 'misspelling', shortMessage: 'Spelling mistake', replacement: 'receive' },
   'a apple': { issueType: 'grammar', shortMessage: 'Article', replacement: 'an apple' },
+  // LanguageTool knows no Indonesian, so it calls every Indonesian word a misspelling.
+  ngecek: { issueType: 'misspelling', shortMessage: 'Spelling mistake', replacement: 'neck' },
 } as const;
 
 function languageToolMatches(text: string) {
@@ -101,6 +103,12 @@ function chatCompletion(content: string): Response {
     JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }),
     { status: 200 },
   );
+}
+
+/** The system prompt an LLM request was sent with. */
+function llmSystemPrompt(init: { body: string }): string {
+  const body = JSON.parse(init.body) as { messages: { role: string; content: string }[] };
+  return body.messages.find((m) => m.role === 'system')!.content;
 }
 
 /** The sentence an LLM request asks about: the last user message. */
@@ -658,6 +666,114 @@ describe('createFieldChecker', () => {
       await field.type('I will recieve it.');
 
       expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+  });
+
+  describe('Mixed-in language', () => {
+    const sentence = 'I already ngecek the logs.';
+    const ngecek = {
+      quote: 'already ngecek',
+      kind: 'translation',
+      type: 'Indonesian word',
+      explanation: '"Ngecek" is informal Indonesian for "to check".',
+      correction: 'already checked',
+    };
+    const indonesian = { hostname: 'github.com', settings: { ...LLM_ALLOWED, mixedInLanguage: 'indonesian' as const } };
+
+    it('sends the prompt unchanged while it is None', async () => {
+      const field = setup(undefined, true);
+
+      await field.typeAndWait('I am agree with you.');
+
+      expect(llmSystemPrompt(llmCalls()[0]![1])).toMatchInlineSnapshot(`
+        "You check one English sentence written by a non-native speaker.
+        Find spelling mistakes, grammar mistakes, and wording that is grammatically correct but that a native speaker would not use.
+        Do not flag style, tone or punctuation preferences. Do not flag anything that is correct and natural.
+
+        Reply with JSON only, no other text, in exactly this shape:
+        {"errors":[{"quote":"...","kind":"spelling|grammar|wording","type":"...","explanation":"...","correction":"..."}]}
+
+        - quote: the wrong words, copied exactly from the sentence (same letters and case), as short as possible while covering the mistake.
+        - kind: "spelling", "grammar", or "wording" (correct but unnatural).
+        - type: a short label for the kind of mistake, e.g. "Verb tense", "Missing article", "Preposition", "Unnatural wording".
+        - explanation: one or two sentences in simple English saying why it is wrong.
+        - correction: the text that should replace quote.
+
+        If the sentence has no mistakes, reply {"errors":[]}."
+      `);
+    });
+
+    it('asks for Translation Slips on Indonesian words, slang included, when set to Indonesian', async () => {
+      const field = setup(indonesian, true);
+
+      await field.typeAndWait('I am agree with you.');
+
+      const prompt = llmSystemPrompt(llmCalls()[0]![1]);
+      expect(prompt).toContain('"translation"');
+      expect(prompt).toContain('Indonesian');
+      expect(prompt).toContain('gue');
+    });
+
+    it('shows a Translation Slip in place of the LanguageTool spelling Slip on the same words', async () => {
+      const field = setup(indonesian, true);
+      llmReplies[sentence] = llmReply([ngecek]);
+
+      await field.typeAndWait(sentence);
+
+      expect(latest).toEqual([
+        {
+          id: expect.any(String),
+          start: 2,
+          end: 16,
+          kind: 'translation',
+          type: 'Indonesian word',
+          explanation: ngecek.explanation,
+          suggestions: ['already checked'],
+          source: 'llm',
+        },
+      ]);
+    });
+
+    it('drops a Translation Slip as malformed while it is None', async () => {
+      const field = setup(undefined, true);
+      llmReplies[sentence] = llmReply([ngecek]);
+
+      await field.typeAndWait(sentence);
+
+      expect(latest.map((e) => [e.kind, e.source])).toEqual([['spelling', 'languagetool']]);
+    });
+
+    it('asks the LLM again, rather than reusing cached Slips, after it changes', async () => {
+      const field = setup({ hostname: 'github.com', settings: LLM_ALLOWED }, true);
+      llmReplies[sentence] = llmReply([ngecek]);
+      await field.typeAndWait(sentence);
+
+      field.changeSettings({ mixedInLanguage: 'indonesian' });
+      await field.typeAndWait(`${sentence} Bye.`);
+
+      expect(llmSent()).toEqual([sentence, sentence, 'Bye.']);
+      expect(latest.map((e) => e.kind)).toEqual(['translation']);
+    });
+
+    it('counts a Translation Slip once its sentence is finished', async () => {
+      const field = setup(indonesian, true);
+      llmReplies[sentence] = llmReply([ngecek]);
+
+      await field.typeAndWait(sentence);
+      await field.typeAndWait(`${sentence} Bye.`);
+
+      expect(tally.counts).toEqual({ translation: { 'Indonesian word': 1 } });
+    });
+
+    it('hides a Translation Slip with Ignore here, without bringing back the spelling Slip it replaced', async () => {
+      const field = setup(indonesian, true);
+      llmReplies[sentence] = llmReply([ngecek]);
+      await field.typeAndWait(sentence);
+      expect(latest.map((e) => e.kind)).toEqual(['translation']);
+
+      field.ignore(latest[0]!.id);
+
+      expect(latest).toEqual([]);
     });
   });
 

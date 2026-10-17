@@ -66,7 +66,7 @@ A site where Type Right is completely off: no checking, no underlines.
 _Avoid_: excluded site (that's a different list)
 
 **Consent**:
-The user's acceptance that their text goes to the current Provider. Without it there are no LLM calls.
+The user's acceptance that their text goes to the current Provider, given on the setup page together with that Provider's API key. Without it there are no LLM calls.
 
 ### Learning
 

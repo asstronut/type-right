@@ -137,7 +137,7 @@ form.addEventListener('submit', async (event) => {
     }
     const providerChanged = changes.llmProvider !== savedSettings.llmProvider;
     fill(await store.saveSettings(changes));
-    // Consent is per provider: the new recipient needs the Consent page accepted again.
+    // Consent is per provider: the new recipient needs the setup page accepted again.
     if (providerChanged) await browser.tabs.create({ url: browser.runtime.getURL('/consent.html') });
   } catch (error) {
     showError(error instanceof Error ? error.message : String(error));

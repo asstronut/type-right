@@ -140,7 +140,7 @@ async function targets(cdp) {
 async function tab(cdp, state, match = flag('tab', state.testPage)) {
   const resolved = EXT_PAGES.includes(match) ? `chrome-extension://${state.extId}/${match}.html` : match;
   const info = (await targets(cdp)).find((t) => t.type === 'page' && t.url.includes(resolved));
-  if (!info) die(`No tab matching "${resolved}". Open tabs:\n${(await targets(cdp)).filter((t) => t.type === 'page').map((t) => `  ${t.url}`).join('\n')}`);
+  if (!info) throw new Error(`No tab matching "${resolved}". Open tabs:\n${(await targets(cdp)).filter((t) => t.type === 'page').map((t) => `  ${t.url}`).join('\n')}`);
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: info.targetId, flatten: true });
   await cdp.send('Target.activateTarget', { targetId: info.targetId });
   const page = {
@@ -323,9 +323,11 @@ function alive(pid) {
 }
 
 async function launch() {
+  if (process.platform !== 'win32') die('verify.mjs runs on Windows only (Edge paths and the PowerShell process sweep).');
   if (fs.existsSync(STATE_FILE)) {
     die(`An instance is already recorded in ${STATE_FILE}. Run \`doctor\` to check it, or \`cleanup\` first.`);
   }
+  const edgePath = findBrowser();
   console.log('Building (npm run build)...');
   execSync('npm run build', { stdio: ['ignore', 'ignore', 'inherit'], cwd: ROOT });
 
@@ -334,15 +336,32 @@ async function launch() {
   const evidenceDir = path.join(VERIFY_DIR, 'evidence', stamp);
   fs.mkdirSync(evidenceDir, { recursive: true });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'type-right-verify-'));
+  // Saved after every process starts, so `cleanup` can stop whatever a failed launch left behind.
+  const state = { profile, edgePath, evidenceDir, extId: null, startedAt: new Date().toISOString() };
+  const save = () => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  save();
+  try {
+    await start(state, save);
+  } catch (error) {
+    console.error(`Launch failed: ${error.message ?? error}\nCleaning up what it started...`);
+    await cleanup();
+    process.exit(1);
+  }
+  out(state, 'launch', { ready: true, testPage: state.testPage, extId: state.extId, evidenceDir: path.relative(ROOT, evidenceDir) });
+}
 
+async function start(state, save) {
   const portFile = path.join(RUN_DIR, 'server-port');
   fs.rmSync(portFile, { force: true });
   const server = spawn(process.execPath, [SCRIPT, 'serve', portFile], { detached: true, stdio: 'ignore', windowsHide: true, cwd: ROOT });
   server.unref();
-  const serverPort = Number(await until('the test page server', async () => fs.readFileSync(portFile, 'utf8')));
-  const testPage = `http://127.0.0.1:${serverPort}/`;
+  state.serverPid = server.pid;
+  save();
+  state.serverPort = Number(await until('the test page server', async () => fs.readFileSync(portFile, 'utf8')));
+  const testPage = (state.testPage = `http://127.0.0.1:${state.serverPort}/`);
+  save();
 
-  const edgePath = findBrowser();
+  const { profile, edgePath } = state;
   const edge = spawn(edgePath, [
     '--headless=new',
     '--remote-debugging-port=0',
@@ -356,35 +375,39 @@ async function launch() {
     testPage,
   ], { detached: true, stdio: 'ignore', windowsHide: true });
   edge.unref();
+  state.edgePid = edge.pid;
+  save();
 
   const [cdpPort, cdpPath] = (await until('Edge DevTools port', async () => fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8'))).trim().split('\n');
-  const state = { profile, edgePath, edgePid: edge.pid, serverPid: server.pid, serverPort, testPage, cdpPort: Number(cdpPort), cdpPath, evidenceDir, extId: null, startedAt: new Date().toISOString() };
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  state.cdpPort = Number(cdpPort);
+  state.cdpPath = cdpPath;
+  save();
 
   const cdp = await browser(state);
   try {
     const sw = await until('the extension service worker', async () => (await targets(cdp)).find((t) => t.type === 'service_worker' && /^chrome-extension:\/\/[a-p]{32}\/background\.js$/.test(t.url)));
     state.extId = new URL(sw.url).host;
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    save();
     // Ready = the content script attached an overlay to every textarea on the test page.
-    const page = await tab(cdp, state, state.testPage);
+    const page = await tab(cdp, state, testPage);
     await until('overlays on every test page textarea', async () =>
       page.eval(`document.querySelectorAll('textarea').length > 0 && document.querySelectorAll('[data-type-right-overlay]').length === document.querySelectorAll('textarea').length`));
   } finally {
     cdp.close();
   }
-  out(state, 'launch', { ready: true, testPage, extId: state.extId, evidenceDir: path.relative(ROOT, evidenceDir) });
 }
 
 async function cleanup() {
   if (!fs.existsSync(STATE_FILE)) return console.log('Nothing to clean up.');
   const state = readState();
-  try {
-    const cdp = await browser(state);
-    await cdp.send('Browser.close').catch(() => {});
-    cdp.close();
-  } catch {
-    // Already gone; the profile sweep below catches stragglers.
+  if (state.cdpPort) {
+    try {
+      const cdp = await browser(state);
+      await cdp.send('Browser.close').catch(() => {});
+      cdp.close();
+    } catch {
+      // Already gone; the profile sweep below catches stragglers.
+    }
   }
   await until('Edge to exit', async () => profileProcesses(state.profile, state.edgePath).length === 0, 10000).catch(() => {
     for (const pid of profileProcesses(state.profile, state.edgePath)) {

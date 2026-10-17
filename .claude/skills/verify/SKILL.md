@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Drive the real Type Right Chrome extension (built from this checkout) in a throwaway headless Microsoft Edge to prove a change works the way a user sees it. Covers underlines, the Hover card, Ignore here, the Dictionary, the Popup Tally, and the Options page. Use after changing anything under entrypoints/ or lib/, or whenever unit tests are not enough proof.
+description: Drive the real Type Right Chrome extension (built from this checkout) in a throwaway headless Microsoft Edge to prove a change works the way a user sees it. Covers underlines, the Hover card, Ignore here, the Dictionary, the Popup Tally, and the Options page. Use after changing anything under entrypoints/ or lib/, or whenever unit tests are not enough proof. Windows only.
 ---
 
 # Verify Type Right in a real browser
@@ -17,9 +17,11 @@ Below, `V` stands for that command. Run `V help` to list every command.
 
 Feature recipes live in [`features/`](features/README.md). Read the index before driving, then follow the matching feature file.
 
-## Why Edge
+## Why Edge, and Windows only
 
 Branded Google Chrome 137+ ignores `--load-extension`, so it cannot load the unpacked build from the command line. Edge (installed with Windows) still honours it. To use another Chromium that does (Chromium, Chrome for Testing), set `TYPE_RIGHT_BROWSER` to its exe. The script finds Edge in `Program Files (x86)` or `Program Files`.
+
+The script runs on Windows only: it looks for Edge in Windows paths, and cleanup finds leftover browser processes with PowerShell. On anything else, including Linux cloud sessions, `launch` stops before starting anything. There, report the change as not verified in a real browser rather than claiming a proof.
 
 ## Launch
 
@@ -42,6 +44,8 @@ A fresh profile starts with default Settings:
 - empty site lists and Dictionary
 
 The Consent page also opens in its own tab, as on a real install. Nothing needs seeding.
+
+If launch fails partway (for example, timing out while waiting for Edge, the extension or the overlays), it stops whatever it started, keeps the evidence folder and exits 1. It saves each process to the state file as soon as it starts, so a launch killed from outside can still be cleaned up with `cleanup`.
 
 Run state lives in `.verify/run/state.json`. Only one instance per checkout: `launch` refuses if one is already recorded. Separate worktrees each get their own `.verify/`, so they can run side by side. The script never touches your own Chrome or Edge profile.
 

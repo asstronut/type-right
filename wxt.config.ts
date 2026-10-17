@@ -6,13 +6,8 @@ export default defineConfig({
   manifest: {
     name: 'Type Right',
     description: 'As-you-type English error checker',
-    permissions: ['storage', 'activeTab'],
-    host_permissions: [
-      'https://api.languagetool.org/*',
-      'https://api.z.ai/*',
-      'https://generativelanguage.googleapis.com/*',
-    ],
-    // Granted at runtime when the user points Type Right at another LanguageTool server.
-    optional_host_permissions: ['http://*/*', 'https://*/*'],
+    permissions: ['storage', 'scripting'],
+    // The content script runs everywhere anyway; this lets it be injected into tabs open at install and reach any LanguageTool server.
+    host_permissions: ['<all_urls>'],
   },
 });

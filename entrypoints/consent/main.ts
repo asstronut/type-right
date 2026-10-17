@@ -44,8 +44,7 @@ function render(shown: Settings): void {
       break;
     case 'accepted':
       status.textContent = `${LLM_PROVIDERS[current.provider].name} checks are on.`;
-      done.textContent =
-        'Type in any text box and Type Right checks it as you write. Pages that were open before you installed Type Right need a reload first.';
+      done.textContent = 'Type in any text box, including in tabs that were already open, and Type Right checks it as you write.';
       done.hidden = false;
       break;
     case 'declined':

@@ -1,26 +1,25 @@
 import { storage } from 'wxt/utils/storage';
 import { addToTally, EMPTY_TALLY, normalizeTally, type SlipSighting, type SlipTally } from './slip-tally';
-import { DEFAULT_SETTINGS, dictionaryKey, mergeSettings, normalizeSettings, type Settings } from './settings';
+import { dictionaryKey, mergeSettings, normalizeSettings, type Settings } from './settings';
+
+// Plain keys rather than storage.defineItem. An item reads storage as soon as it's defined, and in a
+// content script Chrome starts after the extension has reloaded, that read rejects with nothing to catch it.
 
 /** Local, not sync: the API key shouldn't be copied to other browsers' profiles. */
-const settingsItem = storage.defineItem<Partial<Settings>>('local:settings', {
-  fallback: DEFAULT_SETTINGS,
-});
+const SETTINGS_KEY = 'local:settings';
 
 /** Keeps its pre-rename key, so counts saved before Errors became Slips survive. */
-const tallyItem = storage.defineItem<SlipTally>('local:errorTally', {
-  fallback: EMPTY_TALLY,
-});
+const TALLY_KEY = 'local:errorTally';
 
 /** Typed access to the extension's persisted Settings. */
 export const store = {
   async getSettings(): Promise<Settings> {
-    return normalizeSettings(await settingsItem.getValue());
+    return normalizeSettings(await storage.getItem<Partial<Settings>>(SETTINGS_KEY));
   },
 
   async saveSettings(changes: Partial<Settings>): Promise<Settings> {
     const next = mergeSettings(await this.getSettings(), changes);
-    await settingsItem.setValue(next);
+    await storage.setItem(SETTINGS_KEY, next);
     return next;
   },
 
@@ -44,11 +43,11 @@ export const store = {
 
   /** Calls `onChange` with the new Settings whenever any extension page saves them. */
   watchSettings(onChange: (settings: Settings) => void): () => void {
-    return settingsItem.watch((value) => onChange(normalizeSettings(value)));
+    return storage.watch<Partial<Settings>>(SETTINGS_KEY, (value) => onChange(normalizeSettings(value)));
   },
 
   async getTally(): Promise<SlipTally> {
-    return normalizeTally(await tallyItem.getValue());
+    return normalizeTally(await storage.getItem(TALLY_KEY));
   },
 
   /**
@@ -58,15 +57,15 @@ export const store = {
   async recordSlips(sightings: SlipSighting[]): Promise<void> {
     const current = await this.getTally();
     const next = addToTally(current, sightings);
-    if (next !== current) await tallyItem.setValue(next);
+    if (next !== current) await storage.setItem(TALLY_KEY, next);
   },
 
   /** Sets every count to zero and forgets which Slips were counted. */
   async resetTally(): Promise<void> {
-    await tallyItem.setValue(EMPTY_TALLY);
+    await storage.setItem(TALLY_KEY, EMPTY_TALLY);
   },
 
   watchTally(onChange: (tally: SlipTally) => void): () => void {
-    return tallyItem.watch((value) => onChange(normalizeTally(value)));
+    return storage.watch(TALLY_KEY, (value) => onChange(normalizeTally(value)));
   },
 };

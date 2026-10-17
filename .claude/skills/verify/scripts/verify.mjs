@@ -20,7 +20,11 @@ const KINDS = {
   '#e11d48': 'spelling', 'rgb(225, 29, 72)': 'spelling',
   '#2563eb': 'grammar', 'rgb(37, 99, 235)': 'grammar',
   '#7c3aed': 'wording', 'rgb(124, 58, 237)': 'wording',
+  '#0f766e': 'translation', 'rgb(15, 118, 110)': 'translation',
 };
+
+/** The Providers' endpoints, which `stub-llm` answers in place of the real ones. */
+const LLM_URL_PATTERNS = ['https://api.z.ai/*', 'https://generativelanguage.googleapis.com/*'];
 
 function usage() {
   console.log(`usage: node .claude/skills/verify/scripts/verify.mjs <command>
@@ -30,6 +34,8 @@ function usage() {
   tabs                           list open tabs
   open <options|popup|consent|url>  open a new tab
   type <text> [--field N] [--clear]   click textarea N (0-based) and type real keystrokes (\\n = Enter)
+  keys <text>                    type real keystrokes into whatever has focus in the tab (\\n = Enter)
+  press <key>                    press ArrowDown, ArrowUp, Enter, Escape or Tab in the tab
   value [--field N]              print the textarea's value
   slips [--field N] [--wait <text>] [--timeout ms]  print underlined Slips (waits for <text> if given)
   badge [--field N]              print the field's LLM badge (label, title, color)
@@ -40,6 +46,7 @@ function usage() {
   screenshot <name>              save <name>.png into the evidence dir
   eval <js>                      evaluate in the tab's page (inspection only)
   sw-eval <js>                   evaluate in the extension's service worker (inspection only)
+  stub-llm <replies.json>        answer LLM requests from a file instead of the Provider, until cleanup
   cleanup                        close Edge and the test page server; evidence is kept
 
 Tab-scoped commands take --tab <url substring>; the default is the test page.`);
@@ -109,8 +116,10 @@ class Cdp {
     this.ws = ws;
     this.next = 1;
     this.pending = new Map();
+    this.listeners = new Map();
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
+      if (msg.method) this.listeners.get(msg.method)?.(msg.params, msg.sessionId);
       const waiter = msg.id && this.pending.get(msg.id);
       if (!waiter) return;
       this.pending.delete(msg.id);
@@ -122,6 +131,9 @@ class Cdp {
     const id = this.next++;
     this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject, method }));
+  }
+  on(method, listener) {
+    this.listeners.set(method, listener);
   }
   close() {
     this.ws.close();
@@ -187,6 +199,14 @@ async function key(page, def, modifiers = 0) {
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', modifiers, ...def });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers, key: def.key, code: def.code, windowsVirtualKeyCode: def.windowsVirtualKeyCode });
 }
+
+const NAMED_KEYS = {
+  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 },
+  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 },
+  Enter: { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' },
+  Escape: { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 },
+  Tab: { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 },
+};
 
 async function typeText(page, text) {
   for (const ch of text) {
@@ -415,6 +435,7 @@ async function cleanup() {
     }
   });
   if (alive(state.serverPid)) process.kill(state.serverPid);
+  if (state.stubPid && alive(state.stubPid)) process.kill(state.stubPid);
   await sleep(500);
   fs.rmSync(state.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   fs.rmSync(RUN_DIR, { recursive: true, force: true });
@@ -434,6 +455,46 @@ function serve(portFile) {
     res.end(fs.readFileSync(file));
   });
   server.listen(0, '127.0.0.1', () => fs.writeFileSync(portFile, String(server.address().port)));
+}
+
+/**
+ * Answers the service worker's LLM requests from `repliesFile` ({ sentence: entries shaped as
+ * the prompt asks for them }; any other sentence gets none), so the LLM leg runs without a real
+ * key. Re-attaches whenever MV3 restarts the worker.
+ */
+async function stubServe(repliesFile) {
+  const state = readState();
+  const replies = JSON.parse(fs.readFileSync(repliesFile, 'utf8'));
+  const cdp = await browser(state);
+  let attached;
+  cdp.on('Target.detachedFromTarget', ({ sessionId }) => {
+    if (sessionId === attached) attached = undefined;
+  });
+  cdp.on('Fetch.requestPaused', async ({ requestId, request }, sessionId) => {
+    const body = JSON.parse(request.postData ?? '{}');
+    const sentence = body.messages?.findLast((m) => m.role === 'user')?.content ?? '';
+    const prompt = body.messages?.find((m) => m.role === 'system')?.content ?? '';
+    const content = JSON.stringify({ errors: replies[sentence] ?? [] });
+    const completion = JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] });
+    record(state, { command: 'stub-llm answered', result: { url: request.url, sentence, promptAsksForTranslation: prompt.includes('"translation"'), content } });
+    await cdp.send('Fetch.fulfillRequest', {
+      requestId,
+      responseCode: 200,
+      responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+      body: Buffer.from(completion).toString('base64'),
+    }, sessionId).catch(() => {});
+  });
+  for (;;) {
+    if (!attached) {
+      const info = (await targets(cdp).catch(() => [])).find((t) => t.type === 'service_worker' && t.url.startsWith(`chrome-extension://${state.extId}/`));
+      if (info) {
+        const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: info.targetId, flatten: true });
+        await cdp.send('Fetch.enable', { patterns: LLM_URL_PATTERNS.map((urlPattern) => ({ urlPattern, requestStage: 'Request' })) }, sessionId);
+        attached = sessionId;
+      }
+    }
+    await sleep(200);
+  }
 }
 
 // ---------- doctor ----------
@@ -508,6 +569,18 @@ const commands = {
   cleanup,
   doctor,
   serve: () => serve(argv[0]),
+  'stub-serve': () => stubServe(argv[0]),
+
+  'stub-llm': () => {
+    const state = readState();
+    const file = path.resolve(argv[0] ?? die('stub-llm <replies.json>'));
+    if (state.stubPid && alive(state.stubPid)) die('stub-llm is already running; cleanup stops it.');
+    JSON.parse(fs.readFileSync(file, 'utf8'));
+    const stub = spawn(process.execPath, [SCRIPT, 'stub-serve', file], { detached: true, stdio: 'ignore', windowsHide: true, cwd: ROOT });
+    stub.unref();
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ ...state, stubPid: stub.pid }, null, 2));
+    out(state, `stub-llm ${file}`, { stubbing: LLM_URL_PATTERNS });
+  },
   help: usage,
 
   tabs: () => withTab(async (state, cdp) => {
@@ -558,6 +631,24 @@ const commands = {
     }
     await typeText(page, text);
     out(state, `type ${JSON.stringify(text)} --field ${n}${clear ? ' --clear' : ''}`, { value: (await probe(page, n)).value });
+  }),
+
+  keys: () => withTab(async (state, cdp) => {
+    const text = (argv[0] ?? die('keys <text>')).replace(/\\n/g, '\n');
+    const page = await tab(cdp, state);
+    await typeText(page, text);
+    const focused = await page.eval(`(() => { const e = document.activeElement; return e && { name: e.name, value: e.type === 'password' ? '(hidden)' : e.value }; })()`);
+    out(state, `keys ${focused?.value === '(hidden)' ? '(hidden)' : JSON.stringify(text)} --tab ${page.url}`, { focused });
+  }),
+
+  press: () => withTab(async (state, cdp) => {
+    const name = argv[0] ?? die(`press <${Object.keys(NAMED_KEYS).join('|')}>`);
+    const def = NAMED_KEYS[name] ?? die(`Unknown key "${name}". Known: ${Object.keys(NAMED_KEYS).join(', ')}`);
+    const page = await tab(cdp, state);
+    await key(page, def);
+    await sleep(200);
+    const focused = await page.eval(`(() => { const e = document.activeElement; return e && { name: e.name, value: e.type === 'password' ? '(hidden)' : e.value }; })()`);
+    out(state, `press ${name} --tab ${page.url}`, { focused });
   }),
 
   value: () => withTab(async (state, cdp) => {

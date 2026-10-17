@@ -7,8 +7,12 @@ A personal browser extension that flags slips in your English as you type, so yo
 ### Checking
 
 **Field**:
-A `<textarea>` on a page that Type Right watches. Each Field has its own Slips, ignore list and LLM badge.
-_Avoid_: input, box, editor
+A place on a page where you type prose and Type Right watches: a `<textarea>` or a Rich editor. Each Field has its own Slips, ignore list and LLM badge. Single-line boxes (search bars, subject lines) are not Fields.
+_Avoid_: input, box
+
+**Rich editor**:
+A Field that is an editable part of the page itself rather than a textarea, as in Gmail, Slack or ChatGPT. Besides prose it may hold formatting, links, mentions, code and quotes.
+_Avoid_: contenteditable, WYSIWYG
 
 **Slip**:
 One language mistake flagged on a span of a Field's text. It has a Kind, a Type, an explanation and maybe suggestions. In code: `Slip`.

@@ -25,7 +25,7 @@ const KINDS = {
 function usage() {
   console.log(`usage: node .claude/skills/verify/scripts/verify.mjs <command>
 
-  launch                         build, start test page + headless Edge with the extension
+  launch [--dark]                build, start test page + headless Edge with the extension (--dark: prefers-color-scheme dark)
   doctor                         read-only health check of the running instance
   tabs                           list open tabs
   open <options|popup|consent|url>  open a new tab
@@ -339,7 +339,7 @@ async function launch() {
   fs.mkdirSync(evidenceDir, { recursive: true });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'type-right-verify-'));
   // Saved after every process starts, so `cleanup` can stop whatever a failed launch left behind.
-  const state = { profile, edgePath, evidenceDir, extId: null, startedAt: new Date().toISOString() };
+  const state = { profile, edgePath, evidenceDir, dark: bool('dark'), extId: null, startedAt: new Date().toISOString() };
   const save = () => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   save();
   try {
@@ -374,6 +374,7 @@ async function start(state, save) {
     `--disable-extensions-except=${EXT_DIR}`,
     `--load-extension=${EXT_DIR}`,
     '--window-size=1280,900',
+    ...(state.dark ? ['--force-dark-mode'] : []),
     testPage,
   ], { detached: true, stdio: 'ignore', windowsHide: true });
   edge.unref();

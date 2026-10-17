@@ -35,6 +35,8 @@ What `launch` does:
 2. Starts the test page server, a detached `verify.mjs serve`, on `127.0.0.1:<free port>`.
 3. Starts headless Edge with a new profile in `%TEMP%\type-right-verify-*`, CDP on a free port, and the test page as its first tab.
 
+`launch --dark` starts Edge with `--force-dark-mode`, so extension pages render their `prefers-color-scheme: dark` styles. Clicking a `<select>` opens its native list, and screenshots include it.
+
 It is ready when the extension's service worker is up and the content script has put an overlay (`[data-type-right-overlay]`) on every textarea of the test page. It then prints `{ ready, testPage, extId, evidenceDir }`.
 
 A fresh profile starts with default Settings:

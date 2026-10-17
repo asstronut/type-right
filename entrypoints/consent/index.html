@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Type Right: before you start</title>
+    <title>Set up Type Right</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -12,6 +12,7 @@
         --border: #d1d9e0;
         --bg: #ffffff;
         --accent: #0969da;
+        --accent-tint: #ddf4ff;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -20,6 +21,7 @@
           --border: #3d444d;
           --bg: #0d1117;
           --accent: #4493f8;
+          --accent-tint: #121d2f;
         }
       }
       body {
@@ -32,9 +34,84 @@
       }
       h1 {
         font-size: 1.4rem;
+        margin-bottom: 0.5rem;
       }
-      li + li {
-        margin-top: 0.4rem;
+      h2 {
+        font-size: 1.05rem;
+        margin: 1.75rem 0 0.25rem;
+      }
+      a {
+        color: var(--accent);
+      }
+      .muted,
+      .hint {
+        color: var(--muted);
+      }
+      .hint {
+        font-size: 0.85rem;
+        margin: 0.35rem 0 0;
+      }
+      .providers {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.75rem;
+        border: 0;
+        margin: 1rem 0 0;
+        padding: 0;
+      }
+      .card {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        column-gap: 0.6rem;
+        align-items: baseline;
+        align-content: start;
+        padding: 0.75rem 0.9rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .card:has(input:checked) {
+        border-color: var(--accent);
+        background: var(--accent-tint);
+      }
+      .card:has(input:focus-visible) {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .card input {
+        margin: 0;
+      }
+      .card .name {
+        font-weight: 600;
+      }
+      .card .recipient {
+        grid-column: 2;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .key-label {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: 1.25rem;
+      }
+      input[type='password'] {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 0.25rem;
+        padding: 0.45rem 0.6rem;
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .disclosure {
+        margin: 1.25rem 0 0;
+        padding: 0.75rem 0.9rem;
+        border-left: 3px solid var(--border);
+        font-size: 0.9rem;
       }
       .actions {
         display: flex;
@@ -56,35 +133,57 @@
         background: var(--accent);
         color: #fff;
       }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
       #status {
-        color: var(--muted);
+        font-weight: 600;
+        margin: 1.5rem 0 0.25rem;
+      }
+      #status:empty {
+        display: none;
       }
     </style>
   </head>
   <body>
-    <h1>Before Type Right sends your text anywhere</h1>
-    <p>Type Right checks what you type with two engines:</p>
-    <ul>
-      <li>
-        <strong>LanguageTool</strong> checks spelling and grammar. Your text is sent to the LanguageTool server set
-        in Settings (the free public API by default).
-      </li>
-      <li>
-        <strong class="llm-name">GLM</strong> (<span class="llm-recipient">Zhipu AI / Z.ai, a provider in China</span>)
-        checks for unnatural wording and grammar LanguageTool misses. Each finished sentence you type is sent to
-        <span class="llm-name">GLM</span>'s API with your API key.
-      </li>
-    </ul>
+    <h1>Set up Type Right</h1>
     <p>
-      Nothing is sent to <span class="llm-name">GLM</span> unless you accept below. Your consent covers only this
-      provider: choosing another one in Settings asks you again. You can list sites that must never be sent to the
-      LLM in Settings, and withdraw consent there at any time.
+      <strong>LanguageTool</strong> checks your spelling and grammar as you type. It is always on: your text goes to
+      the LanguageTool server set in Settings (the free public API by default).
     </p>
-    <div class="actions">
-      <button type="button" class="primary" id="accept">Accept: allow <span class="llm-name">GLM</span> checks</button>
-      <button type="button" id="decline">Decline: LanguageTool only</button>
-    </div>
+
+    <form id="setup" hidden>
+      <h2>Optional: wording check</h2>
+      <p class="muted">
+        An LLM also flags unnatural wording and grammar LanguageTool misses. Choose a provider and paste your own API
+        key for it.
+      </p>
+      <fieldset class="providers" id="providers" aria-label="LLM provider"></fieldset>
+
+      <div class="key-label">
+        <label for="llmApiKey"><span class="llm-name"></span> API key</label>
+        <a id="keyUrl" target="_blank" rel="noreferrer">Get a key</a>
+      </div>
+      <input type="password" id="llmApiKey" name="llmApiKey" autocomplete="off" spellcheck="false" />
+      <p class="hint">Paste <span id="keyName"></span>.</p>
+
+      <p class="disclosure">
+        Each finished sentence you type is sent to <strong class="llm-name"></strong>
+        (<span class="llm-recipient"></span>) with your key. Nothing is sent until you allow it. Your consent covers
+        only this provider: switching to another one later asks you again. In Settings you can list sites whose text never goes
+        to the LLM, and withdraw consent at any time.
+      </p>
+
+      <div class="actions">
+        <button type="submit" class="primary" id="accept" disabled>Allow <span class="llm-name"></span> checks</button>
+        <button type="button" id="decline">Skip: LanguageTool only</button>
+      </div>
+    </form>
+
     <p id="status" role="status"></p>
+    <p id="done" class="muted" hidden></p>
+    <p id="settingsLink" hidden><a href="/options.html">Open Settings</a></p>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

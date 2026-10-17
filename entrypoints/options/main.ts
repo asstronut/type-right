@@ -107,15 +107,6 @@ function parseSites(textarea: HTMLTextAreaElement, label: string): string[] {
   });
 }
 
-/**
- * The extension can only reach the hosts it has permission for, so a custom
- * LanguageTool server needs the user to grant access to it. Resolves true
- * without a prompt for hosts already granted.
- */
-function requestHostPermission(url: string): Promise<boolean> {
-  return browser.permissions.request({ origins: [`${new URL(url).origin}/*`] });
-}
-
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   save.disabled = true;
@@ -131,13 +122,9 @@ form.addEventListener('submit', async (event) => {
       excludedSites: parseSites(excludedSites, 'Never send to the LLM'),
       disabledSites: parseSites(disabledSites, 'Turn Type Right off'),
     };
-    // Requested before any other await: Chrome only allows the prompt during the click.
-    if (!(await requestHostPermission(url))) {
-      throw new Error(`Type Right needs permission to reach ${new URL(url).host} to use it.`);
-    }
     const providerChanged = changes.llmProvider !== savedSettings.llmProvider;
     fill(await store.saveSettings(changes));
-    // Consent is per provider: the new recipient needs the Consent page accepted again.
+    // Consent is per provider: the new recipient needs the setup page accepted again.
     if (providerChanged) await browser.tabs.create({ url: browser.runtime.getURL('/consent.html') });
   } catch (error) {
     showError(error instanceof Error ? error.message : String(error));

@@ -37,4 +37,4 @@ Each feature file has an H1 title and one paragraph, then four H2s in this order
 - [Ignore here and the Dictionary](./ignore-and-dictionary.md): hide one Slip in a Field, or stop a word being flagged anywhere, and manage the list on the Options page.
 - [Popup Tally](./popup-tally.md): counts of finished Slips by kind and type in the toolbar Popup, and resetting them.
 - [Site controls](./site-controls.md): turn Type Right off on a site, or keep a site's text away from the LLM.
-- [LLM check and consent](./llm-check.md): the Consent page, the LLM badge, and wording Slips from the LLM.
+- [LLM check and consent](./llm-check.md): the first-run setup page (Provider, API key, consent), the LLM badge, and wording Slips from the LLM.

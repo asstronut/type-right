@@ -35,6 +35,8 @@ What `launch` does:
 2. Starts the test page server, a detached `verify.mjs serve`, on `127.0.0.1:<free port>`.
 3. Starts headless Edge with a new profile in `%TEMP%\type-right-verify-*`, CDP on a free port, and the test page as its first tab.
 
+`launch --dark` starts Edge with `--force-dark-mode`, so extension pages render their `prefers-color-scheme: dark` styles. Clicking a `<select>` opens its native list, and screenshots include it.
+
 It is ready when the extension's service worker is up and the content script has put an overlay (`[data-type-right-overlay]`) on every textarea of the test page. It then prints `{ ready, testPage, extId, evidenceDir }`.
 
 A fresh profile starts with default Settings:
@@ -43,7 +45,7 @@ A fresh profile starts with default Settings:
 - LLM provider GLM, no API key, no consent
 - empty site lists and Dictionary
 
-The Consent page also opens in its own tab, as on a real install. Nothing needs seeding.
+The setup page (`consent.html`, where the user gives LLM consent and a key) also opens in its own tab, as on a real install. Nothing needs seeding.
 
 If launch fails partway (for example, timing out while waiting for Edge, the extension or the overlays), it stops whatever it started, keeps the evidence folder and exits 1. It saves each process to the state file as soon as it starts, so a launch killed from outside can still be cleaned up with `cleanup`.
 
@@ -73,7 +75,7 @@ The test page has two textareas: field `0` (plain) and field `1` (short and scro
 
 | Command | What it does, as a user would |
 | --- | --- |
-| `type "<text>" [--field N] [--clear]` | Clicks the field and types real keystrokes. `\n` is Enter. `--clear` does Ctrl+A, Backspace first; without it, typing goes to the end. Prints the field value. |
+| `type "<text>" [--field N \| --selector <css>] [--clear]` | Clicks the field and types real keystrokes. `\n` is Enter. `--clear` does Ctrl+A, Backspace first; without it, typing goes to the end. Prints the field value. `--selector` clicks the element matching `<css>` instead of a textarea, for inputs on extension pages; a password input prints only its length, so a real key stays out of `log.jsonl`. |
 | `slips [--field N] [--wait <text>] [--timeout ms]` | Lists the underlined text and its kind: spelling (red), grammar (blue) or wording (purple). `--wait` polls until `<text>` is underlined. The default timeout is 15 s. |
 | `hover "<underlined text>" [--field N]` | Moves the mouse onto the underline and prints the Hover card: kind, type, explanation, suggestions, buttons. |
 | `card` | Prints the Hover card open now. |
@@ -92,9 +94,9 @@ Stable handles:
 - Hover card: `<type-right-card>`. Its shadow root is closed, so page JS cannot see it; the script reads it through CDP's pierced DOM.
 - Options: `form#settings` with `textarea[name=excludedSites]` (field 0) and `textarea[name=disabledSites]` (field 1), plus `button[type=submit]` and `#dictionary`.
 - Popup: `#counts`, `#reset`, `#exclude`, `#disable`, `#site`, `#siteHint`.
-- Consent: `#accept`, `#decline`.
+- Consent (the setup page, `consent.html`): `form#setup` with one `label.card` per provider (`input[name=llmProvider]`, GLM first, Gemini second), `input[name=llmApiKey]`, `#keyUrl`, `#accept` (disabled until the key is non-blank) and `#decline`. After either button the form hides and `#status` names the outcome, with `#done` below it and `#settingsLink a` after a decline.
 
-Use `type` with `--tab options --field N` to fill Options textareas.
+Use `type` with `--tab options --field N` to fill Options textareas, and `--selector` for any input, such as `type "<key>" --tab consent --selector "input[name=llmApiKey]"`.
 
 ## Evidence
 

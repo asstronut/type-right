@@ -2,7 +2,6 @@ import { makeSightingKey, type Slip } from './slips';
 import type { SlipSighting } from './slip-tally';
 import { LLM_FAILURE_PAUSE_MS, LlmFailedError, RateLimitedError, type Engine } from './engine';
 import type { PageLlmHealth } from './llm-health';
-import type { LlmProviderId } from './llm-providers';
 import { isInDictionary, isSiteDisabled, type Settings } from './settings';
 import { createSlipTracker, type TextSpan } from './slip-tracker';
 import { createCheckScheduler } from './check-scheduler';
@@ -119,8 +118,9 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
           if (tracker.clearSlips('llm')) notify();
           return false;
         }
-        // Another provider's answers would not be this one's.
-        sentenceCache.useProvider(options.site?.settings().llmProvider);
+        // Another Provider's answers, or answers for another Mixed-in language, would not be this check's.
+        const settings = options.site?.settings();
+        sentenceCache.useAnswersOf(settings && `${settings.llmProvider}:${settings.mixedInLanguage}`);
         return true;
       },
       run: () => checkSentences(llm.engine),
@@ -265,13 +265,14 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
 }
 
 /**
- * The LLM's Slips by sentence text, for one Provider at a time. Keeps itself
- * bounded on long-lived fields by forgetting the oldest sentence first.
+ * The LLM's Slips by sentence text, for one Provider and Mixed-in language at
+ * a time. Keeps itself bounded on long-lived fields by forgetting the oldest
+ * sentence first.
  */
 function createSentenceCache() {
   const cache = new Map<string, Slip[]>();
-  /** The Provider the cached results came from. */
-  let cacheProvider: LlmProviderId | undefined;
+  /** Names the Provider and Mixed-in language the cached results came from. */
+  let cacheSource: string | undefined;
   return {
     get: (sentenceText: string) => cache.get(sentenceText),
     has: (sentenceText: string) => cache.has(sentenceText),
@@ -279,11 +280,11 @@ function createSentenceCache() {
       cache.set(sentenceText, found);
       if (cache.size > MAX_CACHED_SENTENCES) cache.delete(cache.keys().next().value!);
     },
-    /** Empties the cache when `provider` is not the one its results came from. */
-    useProvider(provider: LlmProviderId | undefined): void {
-      if (provider === cacheProvider) return;
+    /** Empties the cache when `source` is not the one its results came from. */
+    useAnswersOf(source: string | undefined): void {
+      if (source === cacheSource) return;
       cache.clear();
-      cacheProvider = provider;
+      cacheSource = source;
     },
   };
 }

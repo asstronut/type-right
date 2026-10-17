@@ -28,7 +28,7 @@ export function createTestLlmWiring(initial: Partial<Settings> = {}): TestLlmWir
   const failureWatchers = new Set<(failure: LlmFailure | undefined) => void>();
 
   const gate = createLlmGate({
-    engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey),
+    engine: (s) => createLlmEngine(s.llmProvider, s.llmApiKey, s.mixedInLanguage),
     settings: async () => settings,
     onFailureChange: (failure) => {
       void Promise.resolve().then(() => failureWatchers.forEach((watcher) => watcher(failure)));

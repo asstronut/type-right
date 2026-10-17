@@ -76,15 +76,17 @@ The test page has two textareas: field `0` (plain) and field `1` (short and scro
 | Command | What it does, as a user would |
 | --- | --- |
 | `type "<text>" [--field N \| --selector <css>] [--clear]` | Clicks the field and types real keystrokes. `\n` is Enter. `--clear` does Ctrl+A, Backspace first; without it, typing goes to the end. Prints the field value. `--selector` clicks the element matching `<css>` instead of a textarea, for inputs on extension pages; a password input prints only its length, so a real key stays out of `log.jsonl`. |
-| `slips [--field N] [--wait <text>] [--timeout ms]` | Lists the underlined text and its kind: spelling (red), grammar (blue) or wording (purple). `--wait` polls until `<text>` is underlined. The default timeout is 15 s. |
+| `slips [--field N] [--wait <text>] [--timeout ms]` | Lists the underlined text and its kind: spelling (red), grammar (blue), wording (purple) or translation (teal). `--wait` polls until `<text>` is underlined. The default timeout is 15 s. |
 | `hover "<underlined text>" [--field N]` | Moves the mouse onto the underline and prints the Hover card: kind, type, explanation, suggestions, buttons. |
 | `card` | Prints the Hover card open now. |
 | `click-card "<button>"` | Real click on a card button: `Show answer`, `Apply <suggestion>` (shown once the answer is open), `Ignore here` or `Add to dictionary`. |
+| `press <ArrowDown\|ArrowUp\|Enter\|Escape\|Tab> --tab <tab>` | Presses one named key. To pick a `<select>` option: `click` the select, then `press ArrowDown` and `press Enter`. |
 | `value [--field N]` / `badge [--field N]` | The field's value. The LLM badge's label (`LLM` / `LT only`), its tooltip and its color. |
 | `open <options\|popup\|consent\|url>` / `close <same>` / `tabs` | Opens a new tab, closes matching tabs, or lists open tabs. |
 | `popup` | Opens the real toolbar Popup over the test page. Address it with `--tab popup`. |
 | `click "<css selector>" --tab <tab>` | Real mouse click on an element of an extension page (Options and Consent buttons). Scrolls it into view first. |
 | `screenshot <name> [--tab <tab>]` | Saves `<name>.png` into the evidence dir. |
+| `stub-llm <replies.json>` | Answers the service worker's LLM requests (GLM and Gemini) from a file instead of the Provider, until `cleanup`. The file maps each sentence to the entries the prompt asks the model for (`quote`, `kind`, `type`, `explanation`, `correction`); any other sentence gets none. Each answer is logged with whether the prompt asked for Translation Slips. |
 | `eval "<js>" [--tab <tab>]`, `sw-eval "<js>"` | Inspection only: read the page or the service worker, for example `chrome.storage.local.get(null)`. Never use them to cause the behavior under test. |
 
 Stable handles:
@@ -110,7 +112,7 @@ A proof needs:
 - **The real user path.** Type with keystrokes, hover with the mouse, click buttons, save the Options form. Setting storage or calling internals with `eval` / `sw-eval` is not proof; use them only to read a second view.
 - **The action and its result.** For example: `type`, then `slips --wait`, `hover`, `click-card`, `value`, plus a screenshot of the card or field.
 - **Side effects through a second view.** Words added to the Dictionary show up in the Options `#dictionary` list. The Tally shows up in Popup `#counts`. Site lists show up in the test page's overlays disappearing, and can be read back with `sw-eval "chrome.storage.local.get(null)"`.
-- **Real network.** LanguageTool is the real public API: no mocks. The LLM is only exercised with a key the user has approved for the run (see [features/llm-check.md](features/llm-check.md)).
+- **Real network.** LanguageTool is the real public API: no mocks. The LLM is exercised either with a key the user has approved for the run, or with `stub-llm` and a dummy key (see [features/llm-check.md](features/llm-check.md)). A stubbed run proves what the extension does with a reply, not what the model replies; `npm run eval:llm` covers that.
 
 ## Cleanup
 

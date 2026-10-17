@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { LLM_PROVIDERS, type LlmProviderId } from '../../lib/llm-providers';
-import { normalizeSite, normalizeUrl, type EnglishVariant, type Settings } from '../../lib/settings';
+import { normalizeSite, normalizeUrl, type EnglishVariant, type MixedInLanguage, type Settings } from '../../lib/settings';
 import { store } from '../../lib/store';
 
 const form = document.querySelector<HTMLFormElement>('#settings')!;
@@ -15,6 +15,7 @@ const languageToolUrl = control<HTMLInputElement>('languageToolUrl');
 const excludedSites = control<HTMLTextAreaElement>('excludedSites');
 const disabledSites = control<HTMLTextAreaElement>('disabledSites');
 const englishVariant = control<RadioNodeList>('englishVariant');
+const mixedInLanguage = control<HTMLSelectElement>('mixedInLanguage');
 const dictionaryList = document.querySelector<HTMLUListElement>('#dictionary')!;
 const dictionaryEmpty = document.querySelector<HTMLParagraphElement>('#dictionaryEmpty')!;
 
@@ -31,6 +32,7 @@ function fill(settings: Settings): void {
   excludedSites.value = settings.excludedSites.join('\n');
   disabledSites.value = settings.disabledSites.join('\n');
   englishVariant.value = settings.englishVariant;
+  mixedInLanguage.value = settings.mixedInLanguage;
   savedSnapshot = snapshot();
   showError('');
   updateSave();
@@ -46,6 +48,7 @@ function snapshot(): string {
     excludedSites.value,
     disabledSites.value,
     englishVariant.value,
+    mixedInLanguage.value,
   ]);
 }
 
@@ -118,6 +121,7 @@ form.addEventListener('submit', async (event) => {
       llmApiKey: llmApiKey.value,
       llmConsent: llmConsent.checked,
       englishVariant: englishVariant.value as EnglishVariant,
+      mixedInLanguage: mixedInLanguage.value as MixedInLanguage,
       languageToolUrl: url,
       excludedSites: parseSites(excludedSites, 'Never send to the LLM'),
       disabledSites: parseSites(disabledSites, 'Turn Type Right off'),

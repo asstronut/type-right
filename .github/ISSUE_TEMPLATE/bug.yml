@@ -37,7 +37,7 @@ body:
         - Underline (missing, wrong place, wrong colour)
         - Hover card (Apply, Ignore here, Add to dictionary)
         - Popup
-        - LLM badge or LLM check (wording)
+        - LLM badge or LLM check (wording, translation)
         - LanguageTool check (spelling, grammar)
         - Options / Consent page
         - Other

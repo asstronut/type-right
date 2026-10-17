@@ -209,3 +209,25 @@ describe('personal dictionary', () => {
     expect(normalizeSettings(raw).dictionary).toEqual(['Akbar', 'WXT']);
   });
 });
+
+describe('Mixed-in language', () => {
+  it('is None by default and in older Settings that have none', () => {
+    expect(DEFAULT_SETTINGS.mixedInLanguage).toBe('none');
+    expect(normalizeSettings({ llmApiKey: 'k', llmConsent: true }).mixedInLanguage).toBe('none');
+  });
+
+  it('keeps Indonesian, and reads an unknown stored language as None', () => {
+    expect(normalizeSettings({ mixedInLanguage: 'indonesian' }).mixedInLanguage).toBe('indonesian');
+    expect(normalizeSettings({ mixedInLanguage: 'klingon' as never }).mixedInLanguage).toBe('none');
+  });
+
+  it('leaves key and consent alone when it changes', () => {
+    const user = normalizeSettings({ llmApiKey: 'k', llmConsent: true });
+
+    expect(mergeSettings(user, { mixedInLanguage: 'indonesian' })).toMatchObject({
+      mixedInLanguage: 'indonesian',
+      llmApiKey: 'k',
+      llmConsent: true,
+    });
+  });
+});

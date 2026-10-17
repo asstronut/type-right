@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIXTURE } from './fixture';
+import { FIXTURE, MIXED_FIXTURE } from './fixture';
 import { scoreCase, spanOf, type FixtureCase } from './score';
 
 const at = (sentence: string, quote: string) => {
@@ -19,7 +19,9 @@ describe('spanOf', () => {
   });
 
   it('locates every quote in the fixture', () => {
-    for (const c of FIXTURE) for (const e of c.expected) expect(() => spanOf(c.sentence, e)).not.toThrow();
+    for (const c of [...FIXTURE, ...MIXED_FIXTURE]) {
+      for (const e of c.expected) expect(() => spanOf(c.sentence, e)).not.toThrow();
+    }
   });
 });
 
@@ -54,5 +56,18 @@ describe('scoreCase', () => {
   it('treats any Slip on a correct sentence as a false positive', () => {
     const correct = { sentence: 'All good here.', expected: [] };
     expect(scoreCase(correct, [at(correct.sentence, 'good')]).falsePositives).toBe(1);
+  });
+
+  it('counts an expected Slip of a given Kind found only as another Kind as the wrong Kind', () => {
+    const mixed: FixtureCase = {
+      sentence: 'I already ngecek the logs.',
+      expected: [{ quote: 'already ngecek', kind: 'translation', correction: 'already checked' }],
+    };
+    const s = mixed.sentence;
+
+    expect(scoreCase(mixed, [{ ...at(s, 'ngecek'), kind: 'wording' }]).wrongKind.map((e) => e.quote)).toEqual([
+      'already ngecek',
+    ]);
+    expect(scoreCase(mixed, [{ ...at(s, 'ngecek'), kind: 'translation' }]).wrongKind).toEqual([]);
   });
 });

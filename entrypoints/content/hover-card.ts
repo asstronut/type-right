@@ -10,6 +10,7 @@ const KIND_LABELS: Record<Slip['kind'], string> = {
   spelling: 'Spelling',
   grammar: 'Grammar',
   wording: 'Wording',
+  translation: 'Translation',
 };
 
 const FONT_STACK = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -50,6 +51,7 @@ const STYLES = `
   .kind.spelling { background: ${KIND_COLORS.spelling}; }
   .kind.grammar { background: ${KIND_COLORS.grammar}; }
   .kind.wording { background: ${KIND_COLORS.wording}; }
+  .kind.translation { background: ${KIND_COLORS.translation}; }
   .type {
     font-weight: 600;
   }

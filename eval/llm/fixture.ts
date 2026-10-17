@@ -89,3 +89,68 @@ export const FIXTURE: FixtureCase[] = [
   { sentence: 'If I had known about the delay, I would have left later.', expected: [] },
   { sentence: 'The tests pass on my machine, but they fail in CI.', expected: [] },
 ];
+
+/**
+ * English with Indonesian mixed in, checked with Mixed-in language set to
+ * Indonesian. Each Indonesian stretch is one expected Translation Slip, so a
+ * reply that splits or joins its phrases still finds it; English mistakes in
+ * the same sentence must still be reported as such.
+ */
+export const MIXED_FIXTURE: FixtureCase[] = [
+  {
+    sentence: 'Can you tolong review PR ini before besok pagi?',
+    expected: [
+      { quote: 'tolong', kind: 'translation', correction: 'please' },
+      { quote: 'ini', kind: 'translation', correction: 'this' },
+      { quote: 'besok pagi', kind: 'translation', correction: 'tomorrow morning' },
+    ],
+  },
+  {
+    sentence: 'I already ngecek the logs tapi masih error.',
+    expected: [
+      { quote: 'ngecek', kind: 'translation', correction: 'checked' },
+      { quote: 'tapi masih error', kind: 'translation', correction: 'but there are still errors' },
+    ],
+  },
+  {
+    sentence: 'I want to discuss about the timeline, soalnya deadline-nya mepet banget.',
+    expected: [
+      { quote: 'discuss about', kind: 'grammar', correction: 'discuss' },
+      { quote: 'soalnya deadline-nya mepet banget', kind: 'translation', correction: 'because the deadline is really tight' },
+    ],
+  },
+  {
+    sentence: "He don't know kalau server-nya sudah down.",
+    expected: [
+      { quote: "don't", kind: 'grammar', correction: "doesn't" },
+      { quote: 'kalau server-nya sudah down', kind: 'translation', correction: 'that the server is already down' },
+    ],
+  },
+  {
+    sentence: 'The new design is bagus banget, but the button is too small.',
+    expected: [{ quote: 'bagus banget', kind: 'translation', correction: 'really good' }],
+  },
+  {
+    sentence: 'Sorry telat reply, tadi lagi meeting.',
+    expected: [
+      { quote: 'telat', kind: 'translation', correction: 'for the late' },
+      { quote: 'tadi lagi meeting', kind: 'translation', correction: 'I was in a meeting' },
+    ],
+    corrected: 'Sorry for the late reply, I was in a meeting.',
+  },
+  {
+    sentence: 'Nanti aku kabarin you after the meeting.',
+    expected: [{ quote: 'Nanti aku kabarin', kind: 'translation', correction: "I'll let" }],
+    corrected: "I'll let you know after the meeting.",
+  },
+  // Mostly Indonesian.
+  {
+    sentence: 'Besok gue ada meeting jam 10, jadi gak bisa join standup.',
+    expected: [
+      { quote: 'Besok gue ada meeting jam 10', kind: 'translation', correction: 'I have a meeting at 10 tomorrow' },
+      { quote: 'jadi gak bisa join standup', kind: 'translation', correction: "so I can't join standup" },
+    ],
+  },
+  // English only: no Slips.
+  { sentence: 'I will send the report tomorrow.', expected: [] },
+];

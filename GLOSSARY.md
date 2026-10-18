@@ -11,7 +11,7 @@ A place on a page where you type prose and Type Right watches: a `<textarea>` or
 _Avoid_: input, box
 
 **Rich editor**:
-A Field that is an editable part of the page itself rather than a textarea, as in Gmail, Slack or ChatGPT. Besides prose it may hold formatting, links, mentions, code and quotes.
+A Field that is an editable part of the page itself rather than a textarea, as in Gmail, Slack or ChatGPT. Besides prose it may hold formatting, links, mentions, code and quotes. Its text is checked as if the same lines were typed in a textarea, except that code blocks, quotes and email signatures and quoted replies are not checked, and mentions, emoji and inline code are never flagged.
 _Avoid_: contenteditable, WYSIWYG
 
 **Slip**:

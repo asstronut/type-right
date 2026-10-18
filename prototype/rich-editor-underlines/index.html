@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE #57 – underlines in a ProseMirror editor</title>
+<link rel="stylesheet" href="./node_modules/prosemirror-view/style/prosemirror.css">
+<link rel="stylesheet" href="./node_modules/prosemirror-menu/style/menu.css">
+<link rel="stylesheet" href="./node_modules/prosemirror-example-setup/style/style.css">
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 16px; background: #fafafa; color: #222; }
+  .banner { background: #fde68a; padding: 6px 10px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+  .layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; align-items: start; }
+  #mount { background: #fff; border: 1px solid #ccc; border-radius: 6px; }
+  #mount .ProseMirror { max-height: 260px; overflow: auto; padding: 8px 12px; outline: none; }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .controls button, .controls label { font: 13px system-ui; }
+  #state { font: 12px/1.45 ui-monospace, monospace; background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 8px; white-space: pre-wrap; max-height: 80vh; overflow: auto; }
+  .spacer { height: 600px; color: #999; padding-top: 12px; }
+
+  /* What Type Right's content script would inject: one highlight per Kind. */
+  ::highlight(tr-spelling)    { text-decoration: underline wavy #e11d48 2px; text-underline-offset: 3px; text-decoration-skip-ink: none; }
+  ::highlight(tr-grammar)     { text-decoration: underline wavy #2563eb 2px; text-underline-offset: 3px; text-decoration-skip-ink: none; }
+  ::highlight(tr-wording)     { text-decoration: underline wavy #7c3aed 2px; text-underline-offset: 3px; text-decoration-skip-ink: none; }
+  ::highlight(tr-translation) { text-decoration: underline wavy #0f766e 2px; text-underline-offset: 3px; text-decoration-skip-ink: none; }
+  ::highlight(tr-hover)       { background-color: rgb(250 204 21 / 0.35); }
+
+  #tr-card { position: fixed; z-index: 2147483647; display: none; background: #fff; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.15); padding: 8px 10px; font: 13px/1.4 system-ui; max-width: 280px; }
+  #tr-card b { text-transform: capitalize; }
+  #tr-card button { margin-top: 6px; font: 12px system-ui; }
+</style>
+</head>
+<body>
+<div class="banner">PROTOTYPE for <a href="https://github.com/asstronut/type-right/issues/57">#57</a>, throwaway. ProseMirror stands in for the site; <code>underlines.ts</code> stands in for Type Right and never touches the editor's DOM or API.</div>
+<div class="layout">
+  <div>
+    <div id="mount"></div>
+    <div class="controls">
+      <button id="bold">Site: bold "speling"</button>
+      <button id="remote">Site: remote edit at top</button>
+      <button id="setdoc">Site: setState (same doc)</button>
+      <button id="recreate">Site: destroy + recreate view</button>
+      <button id="long">Site: load long doc</button>
+      <button id="type">Site: type "x" mid-doc</button>
+      <button id="clear">Page: CSS.highlights.clear()</button>
+      <label><input type="checkbox" id="spell"> native spellcheck</label>
+    </div>
+    <div class="spacer">(page scroll room: scroll the page with the mouse over a Slip)</div>
+  </div>
+  <div id="state"></div>
+</div>
+<div id="tr-card"></div>
+<script type="module" src="./editor.ts"></script>
+<script type="module" src="./underlines.ts"></script>
+</body>
+</html>

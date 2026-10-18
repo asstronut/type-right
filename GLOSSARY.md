@@ -7,11 +7,11 @@ A personal browser extension that flags slips in your English as you type, so yo
 ### Checking
 
 **Field**:
-A place on a page where you type prose and Type Right watches: a `<textarea>` or a Rich editor. Each Field has its own Slips, ignore list and LLM badge. Single-line boxes (search bars, subject lines) are not Fields.
+A place on a page where you type prose and Type Right watches: a `<textarea>` or a Rich editor. Each Field has its own Slips, ignore list and LLM badge. Single-line boxes (search bars, subject lines) and code editors are not Fields. A Field lasts until it leaves the page; an editor the site rebuilds becomes a new Field.
 _Avoid_: input, box
 
 **Rich editor**:
-A Field that is an editable part of the page itself rather than a textarea, as in Gmail, Slack or ChatGPT. Besides prose it may hold formatting, links, mentions, code and quotes. Its text is checked as if the same lines were typed in a textarea, except that code blocks, quotes and email signatures and quoted replies are not checked, and mentions, emoji and inline code are never flagged.
+A Field that is an editable part of the page itself rather than a textarea, as in Gmail, Slack or ChatGPT. Besides prose it may hold formatting, links, mentions, code and quotes. It becomes a Field the first time you click into it. Its text is checked as if the same lines were typed in a textarea, except that code blocks, quotes and email signatures and quoted replies are not checked, and mentions, emoji and inline code are never flagged.
 _Avoid_: contenteditable, WYSIWYG
 
 **Slip**:
@@ -58,7 +58,7 @@ Whether text typed on a page goes to the LLM: **active**, **lt-only** (the user 
 ### Your choices
 
 **Ignore here**:
-Hides one Slip everywhere in its Field until the page reloads.
+Hides one Slip everywhere in its Field until the page reloads or the Field goes away.
 _Avoid_: dismiss, skip
 
 **Dictionary**:

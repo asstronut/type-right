@@ -87,7 +87,7 @@ The card that opens when the pointer rests on an underline. It shows the Slip's 
 _Avoid_: tooltip, popup (that's the Popup)
 
 **Apply**:
-Replaces a Slip's text with the suggested fix in one click. Only spelling Slips offer it; grammar, wording and translation you retype yourself.
+Replaces a Slip's text with the suggested fix in one click. Only spelling Slips offer it; grammar, wording and translation you retype yourself. In a Rich editor it is missing when formatting splits the word, on sites where Ctrl+Z can't undo it, and for the rest of the page once an editor there refuses a fix.
 
 **Tally**:
 The Popup's counts of distinct Slips, by Kind and then by Type. Each distinct Slip counts once, after its sentence is finished.

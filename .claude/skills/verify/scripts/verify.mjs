@@ -16,13 +16,6 @@ const EXT_DIR = path.join(ROOT, '.output', 'chrome-mv3');
 const TEST_PAGE_DIR = path.join(ROOT, 'test-page');
 const SCRIPT = path.resolve(process.argv[1]);
 
-const KINDS = {
-  '#e11d48': 'spelling', 'rgb(225, 29, 72)': 'spelling',
-  '#2563eb': 'grammar', 'rgb(37, 99, 235)': 'grammar',
-  '#7c3aed': 'wording', 'rgb(124, 58, 237)': 'wording',
-  '#0f766e': 'translation', 'rgb(15, 118, 110)': 'translation',
-};
-
 /** The Providers' endpoints, which `stub-llm` answers in place of the real ones. */
 const LLM_URL_PATTERNS = ['https://api.z.ai/*', 'https://generativelanguage.googleapis.com/*'];
 const LT_URL_PATTERN = 'https://api.languagetool.org/v2/check*';
@@ -222,29 +215,45 @@ async function typeText(page, text) {
   }
 }
 
-// ---------- page probes (main world; the overlay and badge live in the light DOM) ----------
+// ---------- page probes (main world; the highlights and badge are visible to page JS) ----------
 
 const FIELD_JS = (n) => `document.querySelectorAll('textarea')[${n}]`;
 
-/** The overlay drawn over field N: the one whose box matches the field's padding box. */
+/**
+ * Field N's underlines, read from Type Right's CSS highlights. A textarea's
+ * range (an OpaqueRange) names no node, so each range goes to the textarea
+ * whose box is nearest to it.
+ */
 const PROBE_JS = (n) => `(() => {
   const field = ${FIELD_JS(n)};
   if (!field) return { error: 'no textarea #${n}' };
   const f = field.getBoundingClientRect();
-  const near = (a, b) => Math.abs(a - b) < 4;
-  const overlay = [...document.querySelectorAll('[data-type-right-overlay]')]
-    .find((o) => { const r = o.getBoundingClientRect(); return near(r.left, f.left + field.clientLeft) && near(r.top, f.top + field.clientTop); });
+  const textareas = [...document.querySelectorAll('textarea')];
+  const distance = (r, t) => {
+    const b = t.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    return Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom));
+  };
+  const slips = [];
+  for (const [name, highlight] of CSS.highlights) {
+    if (!name.startsWith('type-right-')) continue;
+    for (const range of highlight) {
+      if (range.startContainer || !range.getBoundingClientRect) continue;
+      const r = range.getBoundingClientRect();
+      const nearest = textareas.reduce((best, t) => (distance(r, t) < distance(r, best) ? t : best));
+      if (nearest !== field) continue;
+      slips.push({ text: field.value.slice(range.startOffset, range.endOffset), kind: name.slice('type-right-'.length), at: range.startOffset, x: r.left + r.width / 2, y: r.bottom - 2 });
+    }
+  }
+  slips.sort((a, b) => a.at - b.at);
   const badges = [...document.querySelectorAll('[data-type-right-badge]')];
   const badge = badges.map((b) => [b, b.getBoundingClientRect()])
     .filter(([b]) => b.style.display !== 'none')
     .sort(([, a], [, b]) => Math.hypot(a.right - f.right, a.bottom - f.bottom) - Math.hypot(b.right - f.right, b.bottom - f.bottom))[0]?.[0];
   return {
-    attached: Boolean(overlay),
     value: field.value,
-    slips: overlay ? [...overlay.querySelectorAll('span')].map((s) => {
-      const r = s.getBoundingClientRect();
-      return { text: s.textContent, color: s.style.textDecorationColor, x: r.left + r.width / 2, y: r.bottom - 2 };
-    }) : [],
+    slips,
     badge: badge ? { label: badge.textContent, title: badge.title, color: badge.style.background || badge.style.backgroundColor } : null,
     field: { x: f.left + f.width / 2, y: f.top + f.height / 2 },
   };
@@ -253,7 +262,6 @@ const PROBE_JS = (n) => `(() => {
 async function probe(page, n) {
   const p = await page.eval(PROBE_JS(n));
   if (p.error) die(p.error);
-  p.slips = p.slips.map((s) => ({ ...s, kind: KINDS[s.color] ?? s.color }));
   return p;
 }
 
@@ -418,10 +426,10 @@ async function start(state, save) {
     const sw = await until('the extension service worker', async () => (await targets(cdp)).find((t) => t.type === 'service_worker' && /^chrome-extension:\/\/[a-p]{32}\/background\.js$/.test(t.url)));
     state.extId = new URL(sw.url).host;
     save();
-    // Ready = the content script attached an overlay to every textarea on the test page.
+    // Ready = the content script made every textarea on the test page a Field, each with its LLM badge.
     const page = await tab(cdp, state, testPage);
-    await until('overlays on every test page textarea', async () =>
-      page.eval(`document.querySelectorAll('textarea').length > 0 && document.querySelectorAll('[data-type-right-overlay]').length === document.querySelectorAll('textarea').length`));
+    await until('a badge on every test page textarea', async () =>
+      page.eval(`document.querySelectorAll('textarea').length > 0 && document.querySelectorAll('[data-type-right-badge]').length === document.querySelectorAll('textarea').length`));
   } finally {
     cdp.close();
   }
@@ -629,8 +637,8 @@ async function doctor() {
     const version = sw && (await sw.eval('chrome.runtime.getManifest().version').catch(() => undefined));
     check('extension service worker', Boolean(version), version ? `${state.extId} v${version}` : 'not running (it may be asleep; any check message wakes it)');
     const t = await tab(cdp, state, state.testPage);
-    const counts = await t.eval(`[document.querySelectorAll('textarea').length, document.querySelectorAll('[data-type-right-overlay]').length]`);
-    check('content script attached', counts[0] > 0 && counts[0] === counts[1], `${counts[1]} overlays / ${counts[0]} textareas`);
+    const counts = await t.eval(`[document.querySelectorAll('textarea').length, document.querySelectorAll('[data-type-right-badge]').length]`);
+    check('content script attached', counts[0] > 0 && counts[0] === counts[1], `${counts[1]} badges / ${counts[0]} textareas`);
   } catch (error) {
     check('CDP reachable', false, String(error.message ?? error));
   } finally {

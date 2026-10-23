@@ -38,7 +38,7 @@ What `launch` does:
 
 `launch --dark` starts Edge with `--force-dark-mode`, so extension pages render their `prefers-color-scheme: dark` styles. Clicking a `<select>` opens its native list, and screenshots include it.
 
-It is ready when the extension's service worker is up and the content script has put an overlay (`[data-type-right-overlay]`) on every textarea of the test page. It then prints `{ ready, testPage, extId, evidenceDir }`.
+It is ready when the extension's service worker is up and the content script has made every textarea of the test page a Field, which shows as one LLM badge (`[data-type-right-badge]`) per textarea. It then prints `{ ready, testPage, extId, evidenceDir }`.
 
 A fresh profile starts with default Settings:
 
@@ -48,7 +48,7 @@ A fresh profile starts with default Settings:
 
 The setup page (`consent.html`, where the user gives LLM consent and a key) also opens in its own tab, as on a real install. Nothing needs seeding.
 
-If launch fails partway (for example, timing out while waiting for Edge, the extension or the overlays), it stops whatever it started, keeps the evidence folder and exits 1. It saves each process to the state file as soon as it starts, so a launch killed from outside can still be cleaned up with `cleanup`.
+If launch fails partway (for example, timing out while waiting for Edge, the extension or the badges), it stops whatever it started, keeps the evidence folder and exits 1. It saves each process to the state file as soon as it starts, so a launch killed from outside can still be cleaned up with `cleanup`.
 
 Run state lives in `.verify/run/state.json`. Only one instance per checkout: `launch` refuses if one is already recorded. Separate worktrees each get their own `.verify/`, so they can run side by side. The script never touches your own Chrome or Edge profile.
 
@@ -68,7 +68,7 @@ It checks:
 - the Rich editor fixture pages are built and served
 - the CDP port belongs to this run's Edge (its command line names our profile)
 - the extension service worker answers with its manifest version
-- every test page textarea has an overlay
+- every test page textarea has a badge, so the content script attached to it
 - `api.languagetool.org` is reachable
 
 ## Drive
@@ -95,7 +95,7 @@ The test page has three textareas: field `0` (plain), field `1` (short and scrol
 
 Stable handles:
 
-- Overlay: `[data-type-right-overlay]`, with one `<span>` per Slip. The kind comes from `text-decoration-color`.
+- Underlines: the `CSS.highlights` entries `type-right-spelling`, `-grammar`, `-wording` and `-translation`, with one range per Slip. The name gives the kind. A textarea's range is an `OpaqueRange`: it has `startOffset`, `endOffset` and `getBoundingClientRect()` but no node, so `slips` matches it to the nearest textarea.
 - LLM badge: `[data-type-right-badge]`.
 - Hover card: `<type-right-card>`. Its shadow root is closed, so page JS cannot see it; the script reads it through CDP's pierced DOM.
 - Options: `form#settings` with `textarea[name=excludedSites]` (field 0) and `textarea[name=disabledSites]` (field 1), plus `button[type=submit]` and `#dictionary`.
@@ -115,7 +115,7 @@ A proof needs:
 
 - **The real user path.** Type with keystrokes, hover with the mouse, click buttons, save the Options form. Setting storage or calling internals with `eval` / `sw-eval` is not proof; use them only to read a second view.
 - **The action and its result.** For example: `type`, then `slips --wait`, `hover`, `click-card`, `value`, plus a screenshot of the card or field.
-- **Side effects through a second view.** Words added to the Dictionary show up in the Options `#dictionary` list. The Tally shows up in Popup `#counts`. Site lists show up in the test page's overlays disappearing, and can be read back with `sw-eval "chrome.storage.local.get(null)"`.
+- **Side effects through a second view.** Words added to the Dictionary show up in the Options `#dictionary` list. The Tally shows up in Popup `#counts`. Site lists show up in the test page's badges and underlines disappearing, and can be read back with `sw-eval "chrome.storage.local.get(null)"`.
 - **Real network.** LanguageTool is the real public API, except under `stub-lt`, which `rich-editors` turns on for its own run. The LLM is exercised either with a key the user has approved for the run, or with `stub-llm` and a dummy key (see [features/llm-check.md](features/llm-check.md)). A stubbed run proves what the extension does with a reply, not what the model replies; `npm run eval:llm` covers that.
 
 ## Cleanup

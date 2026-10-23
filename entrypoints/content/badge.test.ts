@@ -12,7 +12,6 @@ function badgeElement(): HTMLElement {
   return badge;
 }
 
-/** An element on the page that has `box`, as a laid out one would. */
 function elementWith(box: DOMRect): { element: HTMLElement; moveTo(next: DOMRect): void } {
   const element = document.body.appendChild(document.createElement('textarea'));
   const measure = vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(box);

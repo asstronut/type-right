@@ -11,7 +11,6 @@ const CLOSE_DELAY_MS = 250;
 export interface HoverTarget {
   /** The Field's text the Slip flags, as it is now. */
   textOf(slip: Slip): string;
-  /** Whether the Field can replace the Slip's text with a fix. */
   canApply(slip: Slip): boolean;
   /** Replaces the Slip's text with `suggestion`, unless it no longer reads `flagged`. */
   apply(slip: Slip, flagged: string, suggestion: string): void;
@@ -19,7 +18,6 @@ export interface HoverTarget {
   addToDictionary(word: string): void;
 }
 
-/** A Slip under the pointer in the Field of `target`. */
 interface Shown {
   target: HoverTarget;
   slip: Slip;
@@ -52,7 +50,6 @@ export class HoverController {
     window.addEventListener('resize', () => this.close(), { signal: this.listeners.signal });
   }
 
-  /** Tells where the pointer rests in the Field of `target`: on a Slip's underline, or on none. */
   point(target: HoverTarget, hit: SlipHit | undefined): void {
     if (!hit) {
       if (this.pending?.target === target) this.cancelPending();

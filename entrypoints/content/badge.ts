@@ -11,7 +11,6 @@ const FAILURE_REASONS: Record<LlmFailure, string> = {
   'bad-response': 'The LLM provider sent an unexpected response. Retrying in a minute.',
 };
 
-/** What a Field's LLM badge shows for each LLM health. */
 function badgeFor(health: LlmHealth): { label: string; color: string; title: string } {
   switch (health.state) {
     case 'active':
@@ -63,7 +62,6 @@ export function createBadge(element: HTMLElement): Badge {
   function place(): void {
     if (!badge.textContent) return;
     const rect = element.getBoundingClientRect();
-    // A removed or hidden element has no box; neither should its badge.
     if (!element.isConnected || !rect.width || !rect.height) {
       badge.style.display = 'none';
       return;

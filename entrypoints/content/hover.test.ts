@@ -24,7 +24,6 @@ function hitOn(slip: Slip): SlipHit {
   return { slip, rect: new DOMRect(10, 10, 40, 16) };
 }
 
-/** A Field's side of the card. A card asks it for the flagged text when it opens. */
 function createTarget() {
   return {
     textOf: vi.fn((slip: Slip) => `text of ${slip.id}`),

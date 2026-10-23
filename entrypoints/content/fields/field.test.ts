@@ -27,12 +27,10 @@ function spellingSlip(text: string, word: string): Slip {
   };
 }
 
-/** A LanguageTool that knows two misspellings. */
 async function checkSpelling(text: string): Promise<Slip[]> {
   return ['recieve', 'wich'].filter((word) => text.includes(word)).map((word) => spellingSlip(text, word));
 }
 
-/** A Field whose text a test sets directly, and whose ranges are plain offsets. */
 function createFakeAdapter() {
   const element = document.body.appendChild(document.createElement('div'));
   let onRead: ((read: FieldRead) => void) | undefined;
@@ -58,7 +56,6 @@ function createFakeAdapter() {
   };
 }
 
-/** Underlines that remember what each owner drew, and report the hit a test sets. */
 function createFakeUnderlines() {
   const drawn = new Map<object, DrawnSlip[]>();
   let hit: SlipHit | undefined;
@@ -72,7 +69,6 @@ function createFakeUnderlines() {
   return {
     underlines,
     hitAt,
-    /** What the only owner has drawn, or undefined when it has drawn nothing or forgot it. */
     drawn: () => [...drawn.values()][0],
     pointerRestsOn(next: SlipHit | undefined) {
       hit = next;
@@ -112,17 +108,14 @@ function setup({ settings = DEFAULT_SETTINGS }: { settings?: Settings } = {}) {
     addToDictionary,
     changeSettings: (changes: Partial<Settings>) => void (siteSettings = { ...siteSettings, ...changes }),
     reload: () => void (reloaded = true),
-    /** The text each drawn span covers, in the text the Field last read. */
     underlined(text: string) {
       return this.drawn()?.map(({ range }) => text.slice(range.startOffset, range.endOffset));
     },
-    /** The HoverTarget the Field last handed the hover controller. */
     hoverTarget(): HoverTarget {
       const call = hover.point.mock.calls.at(-1);
       if (!call) throw new Error('the hover was never told of the pointer');
       return call[0];
     },
-    /** Moves the pointer onto the Slip's underline and lets the hover hear of it. */
     async pointAt(slip: Slip) {
       underlinesFake.pointerRestsOn({ slip, rect: BOX });
       fake.element.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 20 }));

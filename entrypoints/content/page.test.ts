@@ -26,10 +26,8 @@ const LLM_DEBOUNCE_MS = 1500;
 const LONG_AFTER_MS = 10 * 60_000;
 /** Longer than the Hover card's open delay. */
 const HOVER_OPEN_MS = 300;
-/** Longer than a frame, which the pointer's position waits for before the hover hears of it. */
 const FRAME_MS = 20;
 const TEXT = 'I recieve it.';
-/** Where every underline is painted, and the box a laid out textarea has. */
 const UNDERLINE_BOX = new DOMRect(10, 10, 40, 16);
 const TEXTAREA_BOX = new DOMRect(0, 0, 200, 50);
 
@@ -116,7 +114,6 @@ function createPage({ settings = LLM_ON, stopsThrow = false }: PageOptions = {})
   };
 }
 
-/** Every element Type Right puts on the page: each Field's LLM badge, and the Hover card. */
 function typeRightElements(): Element[] {
   return [...document.querySelectorAll('[data-type-right-badge], type-right-card')];
 }
@@ -125,7 +122,6 @@ function badges(): Element[] {
   return [...document.querySelectorAll('[data-type-right-badge]')];
 }
 
-/** The ranges the page has underlined, in Type Right's own highlights. */
 function underlinedRanges(): AbstractRange[] {
   return SLIP_KINDS.flatMap((kind) => [...(CSS.highlights.get(`type-right-${kind}`) ?? [])]);
 }
@@ -136,7 +132,6 @@ function addField(): HTMLTextAreaElement {
   return field;
 }
 
-/** A textarea that already holds text when the page starts, with the box a laid out one has. */
 function addFilledField(text: string): HTMLTextAreaElement {
   const field = addField();
   field.value = text;
@@ -317,7 +312,6 @@ describe('a Field', () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(badges()).toHaveLength(2);
     expect(underlinedRanges()).toHaveLength(2);
-    // A check for the textarea is waiting to run.
     type(leaving, `${TEXT} Still recieve.`);
     vi.clearAllMocks();
 

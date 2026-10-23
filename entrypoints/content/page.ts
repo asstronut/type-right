@@ -117,7 +117,6 @@ export function runPage(options: PageOptions): void {
       llmHealth,
       underlines,
       hover,
-      // Saving notifies every tab's watcher, which re-renders all fields without the word.
       addToDictionary: (word) => void store.addToDictionary(word),
       onSlipsSeen: (sightings) => {
         void options.recordSlips(sightings).catch(noticeReload);
@@ -171,8 +170,6 @@ export function runPage(options: PageOptions): void {
     };
   }
 
-  // A disabled site gets no checking and no underlines; toggling it on the
-  // Options page takes effect without reloading the page.
   function apply(): void {
     const disabled = isSiteDisabled(hostname, settings);
     if (disabled && running) {

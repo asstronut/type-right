@@ -215,7 +215,7 @@ async function typeText(page, text) {
   }
 }
 
-// ---------- page probes (main world; the highlights and badge are visible to page JS) ----------
+// ---------- page probes ----------
 
 const FIELD_JS = (n) => `document.querySelectorAll('textarea')[${n}]`;
 
@@ -426,7 +426,6 @@ async function start(state, save) {
     const sw = await until('the extension service worker', async () => (await targets(cdp)).find((t) => t.type === 'service_worker' && /^chrome-extension:\/\/[a-p]{32}\/background\.js$/.test(t.url)));
     state.extId = new URL(sw.url).host;
     save();
-    // Ready = the content script made every textarea on the test page a Field, each with its LLM badge.
     const page = await tab(cdp, state, testPage);
     await until('a badge on every test page textarea', async () =>
       page.eval(`document.querySelectorAll('textarea').length > 0 && document.querySelectorAll('[data-type-right-badge]').length === document.querySelectorAll('textarea').length`));

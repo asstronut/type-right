@@ -4,7 +4,6 @@ import { installHighlights } from './test-highlights';
 import { createUnderlines, KIND_COLORS, type Underlines } from './underlines';
 import { makeSlipId, type Slip, type SlipKind } from '../../lib/slips';
 
-/** A line of glyphs, painted from y 80 up to (not including) y 96. */
 const LINE = new DOMRect(10, 80, 40, 16);
 const BELOW_LINE = new DOMRect(10, 100, 60, 16);
 
@@ -21,7 +20,6 @@ function slip(kind: SlipKind = 'spelling'): Slip {
   };
 }
 
-/** A range painted over `rects`, as a textarea's `OpaqueRange` would be. */
 function rangeOver(...rects: DOMRect[]) {
   const disconnect = vi.fn();
   const range = {

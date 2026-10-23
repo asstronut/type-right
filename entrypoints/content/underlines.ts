@@ -10,7 +10,6 @@ export const KIND_COLORS: Record<SlipKind, string> = {
 /** The line sits below the glyphs, so a pointer on it is up to this far under the highlighted range. */
 const PROBE_OFFSETS_PX = [0, 3, 6];
 
-/** A Slip and the range of its Field's text to underline. */
 export interface DrawnSlip {
   slip: Slip;
   range: AbstractRange;
@@ -29,9 +28,7 @@ export interface SlipHit {
 export interface Underlines {
   /** Replaces `owner`'s underlines with `drawn`. */
   draw(owner: object, drawn: DrawnSlip[]): void;
-  /** The Slip of `owner` under the pointer, probing at y, y-3 and y-6 (the line sits below the glyphs). */
   hitAt(owner: object, x: number, y: number): SlipHit | undefined;
-  /** Removes `owner`'s underlines. */
   forget(owner: object): void;
   /** Leaves the registry: deletes each name only while it still holds our own Highlight. */
   dispose(): void;
@@ -42,7 +39,6 @@ type Measurable = Pick<Range, 'getBoundingClientRect' | 'getClientRects'>;
 const highlightName = (kind: SlipKind) => `type-right-${kind}`;
 
 export function createUnderlines(): Underlines {
-  /** Each owner's ranges, with the Slip each one underlines. */
   const drawn = new Map<object, Map<AbstractRange, Slip>>();
   let highlights: Record<SlipKind, Highlight> | undefined;
   let style: HTMLStyleElement | undefined;
@@ -136,7 +132,6 @@ function isMeasurable(range: AbstractRange): range is AbstractRange & Measurable
   return 'getClientRects' in range;
 }
 
-/** The line box of `range` that holds the point, or else the box around all of it. */
 function rectAt(range: AbstractRange, x: number, y: number): DOMRect {
   const measured = isMeasurable(range) ? range : liveRangeOf(range);
   for (const rect of measured.getClientRects()) {
@@ -145,7 +140,6 @@ function rectAt(range: AbstractRange, x: number, y: number): DOMRect {
   return measured.getBoundingClientRect();
 }
 
-/** A `StaticRange` has no rects to measure, so a live `Range` stands in for it. */
 function liveRangeOf(range: AbstractRange): Range {
   const live = document.createRange();
   live.setStart(range.startContainer, range.startOffset);

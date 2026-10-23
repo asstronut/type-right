@@ -1,6 +1,5 @@
 import { vi } from 'vitest';
 
-/** Whether `range` is painted at a viewport point. */
 type Covers = (range: AbstractRange, x: number, y: number) => boolean;
 
 class StubHighlight extends Set<AbstractRange> {

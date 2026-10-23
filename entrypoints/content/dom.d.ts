@@ -17,6 +17,5 @@ interface HighlightHitResult {
 }
 
 interface HighlightRegistry {
-  /** The highlights painted at a viewport point, with the ranges that cover it. */
   highlightsFromPoint(x: number, y: number): HighlightHitResult[];
 }

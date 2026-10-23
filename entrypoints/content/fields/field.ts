@@ -10,9 +10,7 @@ import type { Slip } from '../../../lib/slips';
 /** A snapshot of a Field's text that carries the way to range over it, so ranges always match the text they came with. */
 export interface FieldRead {
   text: string;
-  /** Spans that are never flagged (chips, emoji); textareas have none. Used from #72. */
   neverFlag: TextSpan[];
-  /** True while an IME composition is in progress. Used from #74. */
   composing: boolean;
   rangeFor(span: TextSpan): AbstractRange;
 }
@@ -23,7 +21,6 @@ export interface FieldAdapter {
   /** Delivers a read at attach (when the kind's rules allow it) and after every change, until `signal` aborts. */
   watch(onRead: (read: FieldRead) => void, signal: AbortSignal): void;
   canApply(slip: Slip): boolean;
-  /** The edit itself: select the Slip's text and replace it with `suggestion`. */
   replace(slip: Slip, suggestion: string): Promise<void>;
 }
 
@@ -40,7 +37,6 @@ export interface FieldDeps {
 }
 
 export interface Field {
-  /** Re-renders the Slips, after a Settings change such as the Dictionary. */
   refresh(): void;
   /** Lets the Field count its Slips again, after the counts are reset. */
   forgetReported(): void;
@@ -58,7 +54,6 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   const { element } = adapter;
   const { underlines, hover } = deps;
   const listeners = new AbortController();
-  /** The newest read, which the Slips on screen are drawn from. */
   let latest: FieldRead | undefined;
 
   const checker = createFieldChecker({
@@ -86,7 +81,6 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     textOf: (slip) => latest?.text.slice(slip.start, slip.end) ?? '',
     canApply: (slip) => adapter.canApply(slip),
     apply(slip, flagged, suggestion) {
-      // The text moved on since the card opened; replacing by offset would hit the wrong words.
       if (latest?.text.slice(slip.start, slip.end) !== flagged) return;
       void adapter.replace(slip, suggestion);
     },
@@ -134,11 +128,9 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   };
 
   adapter.watch((read) => {
-    // The next edit after a reload is when it's noticed at the latest.
     if (deps.noticeReload()) return;
     latest = read;
     hover.changed(target);
-    // Shifted/trimmed underlines on every edit; the debounced re-check then fills in anything new.
     render(checker.update(read.text));
   }, signal);
 

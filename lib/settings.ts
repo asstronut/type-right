@@ -20,7 +20,6 @@ export interface Settings {
   languageToolUrl: string;
   /** Sites whose text is never sent to the LLM (LanguageTool still runs). */
   excludedSites: string[];
-  /** Sites where the extension is completely off: no checking, no overlay. */
   disabledSites: string[];
   /** The user's own words, never flagged as spelling Slips. */
   dictionary: string[];

@@ -285,6 +285,22 @@ describe('createFieldChecker', () => {
     expect(latest[0]).toMatchObject({ kind: 'grammar', type: 'Article', source: 'languagetool' });
   });
 
+  it('drops LanguageTool matches that name no words of the text, keeping the others', async () => {
+    const field = setup();
+    const text = 'I will recieve it';
+    const [good] = languageToolMatches(text);
+    const outside = [
+      { ...good!, offset: text.length - 2, length: 10 },
+      { ...good!, offset: -1, length: 3 },
+      { ...good!, offset: 3, length: 0 },
+    ];
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ matches: [...outside, good] }), { status: 200 }));
+
+    await field.type(text);
+
+    expect(latest.map(({ start, end }) => text.slice(start, end))).toEqual(['recieve']);
+  });
+
   describe('while the user keeps typing', () => {
     it('shifts a Slip right away when text is inserted before it', async () => {
       const field = setup();

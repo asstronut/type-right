@@ -1,7 +1,9 @@
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { FieldOverlay } from './field-overlay';
+import { createField, type Field, type FieldDeps } from './fields/field';
+import { textareaAdapter } from './fields/textarea';
 import { HoverController } from './hover';
-import { createFieldChecker, type CheckEngines, type FieldChecker } from '../../lib/checker';
+import { createUnderlines } from './underlines';
+import type { CheckEngines } from '../../lib/checker';
 import type { Engine } from '../../lib/engine';
 import { createLlmHealth, type LlmFailureLink, type LlmHealth } from '../../lib/llm-health';
 import { isSiteDisabled, type Settings } from '../../lib/settings';
@@ -29,11 +31,6 @@ export interface PageOptions {
   llmFailure: LlmFailureLink;
   /** Has the background worker count newly seen Slips in the Tally. */
   recordSlips(sightings: SlipSighting[]): Promise<void>;
-}
-
-interface FieldState {
-  overlay: FieldOverlay;
-  checker: FieldChecker;
 }
 
 interface Running {
@@ -112,42 +109,28 @@ export function runPage(options: PageOptions): void {
 
   /** Attaches to every textarea on the page. */
   function start(): Running {
-    const fields = new Map<HTMLTextAreaElement, FieldState>();
-    const listeners = new AbortController();
-    const listen = { signal: listeners.signal };
+    const fields = new Map<HTMLElement, Field>();
+    const underlines = createUnderlines();
+    const deps: FieldDeps = {
+      engines,
+      site,
+      llmHealth,
+      underlines,
+      hover,
+      addToDictionary: (word) => void store.addToDictionary(word),
+      onSlipsSeen: (sightings) => {
+        void options.recordSlips(sightings).catch(noticeReload);
+      },
+      noticeReload,
+    };
 
-    function attach(field: HTMLTextAreaElement): void {
-      if (fields.has(field)) return;
-      const overlay = new FieldOverlay(field);
-      const checker = createFieldChecker({
-        engines,
-        site,
-        llmHealth,
-        onChange: (slips) => overlay.render(field.value, slips),
-        onSlipsSeen: (sightings) => {
-          void options.recordSlips(sightings).catch(noticeReload);
-        },
-      });
-      overlay.setLlmHealth(llmHealth.health());
-      fields.set(field, { overlay, checker });
-      hover.watch(field, overlay, {
-        ignore: (slip) => checker.ignore(slip.id),
-        // Saving notifies every tab's watcher, which re-renders all fields without the word.
-        addToDictionary: (word) => void store.addToDictionary(word),
-      }, listeners.signal);
-      field.addEventListener('input', () => {
-        // The next edit after a reload is when it's noticed at the latest.
-        if (noticeReload()) return;
-        // Render shifted/trimmed underlines on every keystroke; the debounced
-        // re-check then fills in anything new.
-        overlay.render(field.value, checker.update(field.value));
-      }, listen);
-      // Pre-filled fields (e.g. edit forms) get checked once without waiting for a keystroke.
-      if (field.value) overlay.render(field.value, checker.update(field.value));
+    function attach(textarea: HTMLTextAreaElement): void {
+      if (fields.has(textarea)) return;
+      fields.set(textarea, createField(textareaAdapter(textarea), deps));
     }
 
     function attachAllWithin(root: ParentNode): void {
-      root.querySelectorAll('textarea').forEach((field) => attach(field as HTMLTextAreaElement));
+      root.querySelectorAll('textarea').forEach(attach);
     }
 
     attachAllWithin(document);
@@ -160,39 +143,32 @@ export function runPage(options: PageOptions): void {
           attachAllWithin(node);
         }
       }
+      for (const [element, field] of fields) {
+        if (element.isConnected) continue;
+        field.dispose();
+        fields.delete(element);
+      }
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
-
-    // Reposition (not re-render) on page scroll/resize; the field's own
-    // scroll is handled inside FieldOverlay itself.
-    const repositionAll = () => fields.forEach(({ overlay }) => overlay.reposition());
-    document.addEventListener('scroll', repositionAll, { capture: true, signal: listeners.signal });
-    window.addEventListener('resize', repositionAll, listen);
 
     return {
       stop() {
         observer.disconnect();
-        listeners.abort();
-        hover.close();
-        fields.forEach(({ overlay, checker }) => {
-          checker.dispose();
-          overlay.destroy();
-        });
+        fields.forEach((field) => field.dispose());
+        underlines.dispose();
       },
       showLlmHealth(health) {
-        fields.forEach(({ overlay }) => overlay.setLlmHealth(health));
+        fields.forEach((field) => field.showLlmHealth(health));
       },
       refreshFields() {
-        fields.forEach(({ overlay, checker }, field) => overlay.render(field.value, checker.slips()));
+        fields.forEach((field) => field.refresh());
       },
       forgetReported() {
-        fields.forEach(({ checker }) => checker.forgetReported());
+        fields.forEach((field) => field.forgetReported());
       },
     };
   }
 
-  // A disabled site gets no checking and no overlay; toggling it on the
-  // Options page takes effect without reloading the page.
   function apply(): void {
     const disabled = isSiteDisabled(hostname, settings);
     if (disabled && running) {

@@ -1,5 +1,5 @@
 export function modelText(doc) {
-  return doc.textBetween(0, doc.content.size, '\n', '￼');
+  return doc.textBetween(0, doc.content.size, '\n', '\ufffc');
 }
 
 export function findLastWord(doc, word, skipTypes) {

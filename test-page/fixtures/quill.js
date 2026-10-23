@@ -106,7 +106,7 @@ function lines() {
   let line = '';
   for (const op of quill.getContents().ops) {
     if (typeof op.insert !== 'string') {
-      line += '￼';
+      line += '\ufffc';
       index += 1;
       continue;
     }
@@ -138,14 +138,14 @@ function seeds() {
     check('mention chip', chip?.textContent === '@Dana' && chip.getAttribute('data-label') === '@Dana', chip?.outerHTML),
     check(
       'image emoji with U+FEFF guards',
-      emoji?.src.startsWith('data:') && guards.length === 2 && guards.every((guard) => guard === '﻿'),
+      emoji?.src.startsWith('data:') && guards.length === 2 && guards.every((guard) => guard === '\ufeff'),
       `guards ${JSON.stringify(guards)}, children of ${emoji?.tagName}`,
     ),
     check('code block', pre?.matches('pre.ql-syntax') && pre.textContent.includes('recieve'), 'pre.ql-syntax (Quill 1.3 has no .ql-code-block)'),
     check('blockquote', quote?.textContent.includes('recieve'), 'blockquote'),
     check('inline code', code?.textContent === 'refresh_all.py', 'p > code'),
     check('decoy: hidden ql-clipboard', clipboard()?.getAttribute('contenteditable') === 'true' && clipboard().getAttribute('aria-hidden') === 'true', 'div.ql-clipboard'),
-    check('remaning after the emoji', typing.tagName === 'P' && typing.textContent.split('﻿').pop().includes('remaning'), typing.textContent),
+    check('remaning after the emoji', typing.tagName === 'P' && typing.textContent.split('\ufeff').pop().includes('remaning'), typing.textContent),
     tallerThanScroller(root, scroller),
   ];
 }
@@ -164,9 +164,7 @@ function remoteEdit(text) {
 
 function replaceRoot() {
   const contents = quill.getContents();
-  const old = quill.container;
-  quill = null;
-  mount = remount(old);
+  mount = remount(quill.container);
   quill = createQuill(mount, contents);
   return host();
 }

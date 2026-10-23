@@ -10,7 +10,7 @@ import { elementsNotChecked, findLastWord, inlineCode, modelText } from './pm-sh
 import { FILLER, countCycleWords, hasStubWord, longParagraphs } from './prose.js';
 
 const { column, library } = __FIXTURE__;
-const variant = getVariant();
+const variant = getVariant('long');
 const page = buildPage(column);
 const { scroller, otherScroller } = page;
 let mount = page.mount;

@@ -50,9 +50,12 @@ const STYLE = `
   .ql-editor.ql-blank::before { left: 0; }
 `;
 
-export function getVariant() {
-  const variant = new URLSearchParams(location.search).get('variant');
-  return variant === 'long' || variant === 'modal' ? variant : 'default';
+export function getVariant(...supported) {
+  const variant = new URLSearchParams(location.search).get('variant') ?? 'default';
+  if (variant !== 'default' && !supported.includes(variant)) {
+    throw new Error(`This fixture has no "${variant}" variant. It has: default${supported.map((name) => `, ${name}`).join('')}`);
+  }
+  return variant;
 }
 
 export function check(name, ok, detail) {
@@ -81,7 +84,7 @@ export function buildPage(column) {
   const scroller = el('div', { class: 'scroller' }, mount);
   const slot = el('main', { id: 'editor-slot' }, scroller);
   document.body.append(header, otherScroller, slot);
-  return { header, otherScroller, scroller, mount, slot };
+  return { otherScroller, scroller, mount, slot };
 }
 
 export function remount(oldMount) {

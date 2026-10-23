@@ -7,7 +7,7 @@ import { elementsNotChecked, findLastWord, inlineCode, modelText } from './pm-sh
 import { FILLER, hasStubWord } from './prose.js';
 
 const { column, library } = __FIXTURE__;
-const variant = getVariant();
+const variant = getVariant('modal');
 const page = buildPage(column);
 const { scroller, otherScroller, slot } = page;
 let mount = page.mount;

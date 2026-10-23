@@ -4,7 +4,7 @@ import { buildPage, check, el, getVariant, tallerThanScroller, textboxAttributes
 import { FILLER, countCycleWords, longParagraphs } from './prose.js';
 
 const { column, library } = __FIXTURE__;
-const variant = getVariant();
+const variant = getVariant('long');
 const { scroller, otherScroller, mount, slot } = buildPage(column);
 
 const escapeHtml = (value) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -18,7 +18,7 @@ const defaultQuote = [
 
 const quoteParagraphs = variant === 'long' ? longParagraphs() : defaultQuote;
 
-const ROOT_HTML = `<div id=":t4" class="Am aiL Al editable LW-avf tS-tW" hidefocus="true" aria-label="Message Body" writingsuggestions="false" g_editable="true" role="textbox" aria-multiline="true" contenteditable="true" tabindex="1" style="direction: ltr; min-height: 225px;" itacorner="6,7:1,1,0,0" spellcheck="false" aria-owns=":vk" aria-controls=":vk" aria-expanded="false"><div><div class="gmail_default" style="font-family: georgia, serif;">​<span style="font-family: Arial, Helvetica, sans-serif; background-color: transparent;">@budi thanks for fixing the bug! I merged your change into \`main\`.</span></div>The build passed on the first try.<br><br>Budi's note was short: "it works on my machine." Let's hope it works everywhere <img data-emoji="✅" class="an1" alt="✅" aria-label="✅" draggable="false" src="${CHECK_EMOJI}" loading="lazy"> See https://example.com/pull/42 if you want to check the diffrence.<br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div dir="ltr"><font face="georgia,serif">Sender Name<br></font></div></div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">On Mon, Oct 19, 2026 at 9:00 AM Budi &lt;<a href="mailto:budi@example.com">budi@example.com</a>&gt; wrote:<br></div><blockquote class="gmail_quote" style="margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex;"><div dir="ltr">${quoteParagraphs.map((paragraph) => `<div>${escapeHtml(paragraph)}</div>`).join('')}</div></blockquote></div></div>`;
+const ROOT_HTML = `<div id=":t4" class="Am aiL Al editable LW-avf tS-tW" hidefocus="true" aria-label="Message Body" writingsuggestions="false" g_editable="true" role="textbox" aria-multiline="true" contenteditable="true" tabindex="1" style="direction: ltr; min-height: 225px;" itacorner="6,7:1,1,0,0" spellcheck="false" aria-owns=":vk" aria-controls=":vk" aria-expanded="false"><div><div class="gmail_default" style="font-family: georgia, serif;">\u200b<span style="font-family: Arial, Helvetica, sans-serif; background-color: transparent;">@budi thanks for fixing the bug! I merged your change into \`main\`.</span></div>The build passed on the first try.<br><br>Budi's note was short: "it works on my machine." Let's hope it works everywhere <img data-emoji="✅" class="an1" alt="✅" aria-label="✅" draggable="false" src="${CHECK_EMOJI}" loading="lazy"> See https://example.com/pull/42 if you want to check the diffrence.<br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div dir="ltr"><font face="georgia,serif">Sender Name<br></font></div></div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">On Mon, Oct 19, 2026 at 9:00 AM Budi &lt;<a href="mailto:budi@example.com">budi@example.com</a>&gt; wrote:<br></div><blockquote class="gmail_quote" style="margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex;"><div dir="ltr">${quoteParagraphs.map((paragraph) => `<div>${escapeHtml(paragraph)}</div>`).join('')}</div></blockquote></div></div>`;
 
 mount.innerHTML = `<div class="aO7"><div class="Ar Au">${ROOT_HTML}</div></div>`;
 
@@ -64,7 +64,7 @@ function seeds() {
   const checks = [
     textboxAttributes(root, 'false'),
     check('compose root has g_editable', root.getAttribute('g_editable') === 'true' && root.isContentEditable, '#:t4'),
-    check('leading U+200B', typingBlock().textContent.startsWith('​'), JSON.stringify(typingBlock().textContent.slice(0, 2))),
+    check('leading U+200B', typingBlock().textContent.startsWith('\u200b'), JSON.stringify(typingBlock().textContent.slice(0, 2))),
     check('image emoji', root.querySelector('img[data-emoji]')?.src.startsWith('data:'), 'img[data-emoji] with a data: URI'),
     check('signature', signaturePrefix()?.textContent === '-- ' && signature()?.textContent.includes('Sender Name'), 'span.gmail_signature_prefix + div.gmail_signature'),
     check(

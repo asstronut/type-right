@@ -110,10 +110,15 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   let underBox = false;
   document.addEventListener('mousemove', (event) => {
     const wasUnderBox = underBox;
-    underBox = !(event.target instanceof Node && element.contains(event.target)) && isUnderBox(element, event);
+    const inElement = event.target instanceof Node && element.contains(event.target);
+    underBox = !inElement && isUnderBox(element, event);
     if (underBox) probe(event);
-    else if (wasUnderBox) leave();
+    else if (wasUnderBox && !inElement) leave();
   }, { passive: true, signal });
+  document.documentElement.addEventListener('mouseleave', () => {
+    if (underBox) leave();
+    underBox = false;
+  }, { signal });
   element.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') hover.close();
   }, { signal });
@@ -147,5 +152,5 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
 /** Pointer coordinates are whole pixels, so a box edge between two pixels counts from the pixel it falls in. */
 function isUnderBox(element: HTMLElement, { clientX, clientY }: MouseEvent): boolean {
   const box = element.getBoundingClientRect();
-  return clientX >= box.left && clientX <= box.right && clientY >= Math.floor(box.bottom) && clientY <= box.bottom + UNDERLINE_REACH_PX;
+  return box.width > 0 && clientX >= box.left && clientX <= box.right && clientY >= Math.floor(box.bottom) && clientY <= box.bottom + UNDERLINE_REACH_PX;
 }

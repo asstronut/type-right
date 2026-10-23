@@ -57,7 +57,10 @@ const BLOCK_TAGS = new Set([
   'section', 'table', 'tbody', 'thead', 'tfoot', 'tr', 'td', 'th', 'ul',
 ]);
 
-const SKIPPED_TAGS = new Set(['script', 'style', 'template', 'noscript', 'img']);
+const SKIPPED_TAGS = new Set([
+  'script', 'style', 'template', 'noscript', 'img', 'svg', 'math', 'canvas', 'video', 'audio', 'object', 'iframe',
+  'select', 'textarea',
+]);
 
 /** No computed style: it forces layout, and a read runs on every edit. */
 function classify(element: Element): Role {

@@ -135,6 +135,7 @@ describe('what is not in the text', () => {
     ['scripts and styles', '<p>A<script>x()</script><style>p { color: red }</style></p>', 'A'],
     ['templates and noscript', '<p>A<template>t</template><noscript>n</noscript>B</p>', 'AB'],
     ['images', '<p>A <img alt="smile" src="x"> B</p>', 'A  B'],
+    ['icons and embedded content', '<p>A<svg><title>Remove</title></svg><select><option>One</option></select>B</p>', 'AB'],
     ['a hidden block, without a line of its own', '<p>A</p><p hidden>H</p><p>B</p>', 'A\nB'],
     ['aria-hidden nodes', '<p>A<span aria-hidden="true">H</span>B</p>', 'AB'],
     ['nodes with display: none', '<p>A<span style="display: none">H</span>B</p>', 'AB'],

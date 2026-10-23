@@ -2,8 +2,8 @@
 
 Chrome MV3 extension (WXT, TypeScript, Vitest). Vocabulary: `GLOSSARY.md`. Details: README "Architecture".
 
-- `entrypoints/content/`: per-page. `index.ts` wires the page to the browser; `page.ts` keeps one Field per textarea (kind-blind `Map<HTMLElement, Field>`), ends a Field when its element leaves the page, and removes Type Right from the page once the extension reloads; `underlines.ts` owns the four `type-right-*` CSS highlights for the whole page and finds the Slip under the pointer; `badge.ts` draws the LLM badge; `hover.ts` + `hover-card.ts` handle the Hover card.
-- `entrypoints/content/fields/`: `field.ts` (`createField`: what every kind of Field shares, wiring a `FieldAdapter`'s reads to the checker, underlines, badge, Hover card and Ignore here) and `textarea.ts` (the textarea `FieldAdapter`: `input` reads, `OpaqueRange`s, Apply through `execCommand`); `hidden.ts` says whether an element is out of sight.
+- `entrypoints/content/`: per-page. `index.ts` wires the page to the browser; `page.ts` keeps one Field per textarea and per focused Rich editor (kind-blind `Map<HTMLElement, Field>`), ends a Field when its element leaves the page, and removes Type Right from the page once the extension reloads; `underlines.ts` owns the four `type-right-*` CSS highlights for the whole page and finds the Slip under the pointer; `badge.ts` draws the LLM badge; `hover.ts` + `hover-card.ts` handle the Hover card.
+- `entrypoints/content/fields/`: `field.ts` (`createField`: what every kind of Field shares, wiring a `FieldAdapter`'s reads to the checker, underlines, badge, Hover card and Ignore here) and `textarea.ts` (the textarea `FieldAdapter`: `input` reads, `OpaqueRange`s, Apply through `execCommand`), `rich-editor.ts` (the Rich editor `FieldAdapter`: `MutationObserver` reads, plus `editingHostOf` and `canBeRichField`, which decide what becomes a Field) and `rich-text.ts` (the DOM walk that gives a Rich editor's text and the `StaticRange` for a span of it); `hidden.ts` says whether an element is out of sight.
 - `lib/checker.ts`: per-Field core, connecting the parts below (per-Engine gate, paragraph re-check, Finished-sentence LLM check + per-Provider sentence cache, back-off amounts, Tally reporting). Tests in `checker.test.ts`, through the public interface only.
 - `lib/slip-tracker.ts`: pure Slip state of a Field (text, both Engines' Slips, dirty span, version; edit following, LT/LLM merge, Dictionary predicate, Ignore here). Tests in `slip-tracker.test.ts`.
 - `lib/check-scheduler.ts`: debounce + single-flight + back-off, one per Engine; blind to why it is blocked.
@@ -15,7 +15,7 @@ Chrome MV3 extension (WXT, TypeScript, Vitest). Vocabulary: `GLOSSARY.md`. Detai
 - `entrypoints/{popup,options,consent}/`: extension pages.
 - `eval/llm/`: on-demand LLM prompt eval against the real API (`npm run eval:llm`). `run.ts` (the API run) is not part of `npm test`; `score.test.ts` (scoring, no network) is.
 
-Flow: textarea edit → Field read → checker → message → background → Engine → `Slip[]` → CSS highlights.
+Flow: textarea edit or Rich editor mutation → Field read → checker → message → background → Engine → `Slip[]` → CSS highlights.
 
 Verify with `npm test` and `npm run compile`.
 

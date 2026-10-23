@@ -34,9 +34,16 @@ interface Pending extends Shown {
  */
 export class HoverController {
   private readonly card = new HoverCard({
-    onPointerEnter: () => this.cancelClose(),
-    onPointerLeave: () => this.scheduleClose(),
+    onPointerEnter: () => {
+      this.pointerOnCard = true;
+      this.cancelClose();
+    },
+    onPointerLeave: () => {
+      this.pointerOnCard = false;
+      this.scheduleClose();
+    },
   });
+  private pointerOnCard = false;
   private shown: Shown | null = null;
   private pending: Pending | null = null;
   private closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -125,11 +132,12 @@ export class HoverController {
   private hide(): void {
     this.cancelClose();
     this.shown = null;
+    this.pointerOnCard = false;
     this.card.hide();
   }
 
   private scheduleClose(): void {
-    if (!this.shown || this.closeTimer) return;
+    if (!this.shown || this.closeTimer || this.pointerOnCard) return;
     this.closeTimer = setTimeout(() => this.hide(), CLOSE_DELAY_MS);
   }
 

@@ -52,6 +52,21 @@ describe('the LLM badge', () => {
     expect(badgeElement().style.top).toBe(`${BOX.bottom - 4 - BADGE_HEIGHT}px`);
   });
 
+  it('sits in the corner of the part a scrolling container shows, when the element is taller than it', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(BADGE_WIDTH);
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(BADGE_HEIGHT);
+    const scroller = document.body.appendChild(document.createElement('div'));
+    scroller.style.overflowY = 'auto';
+    const shown = new DOMRect(100, 200, 300, 40);
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(shown);
+    const { element } = elementWith(new DOMRect(100, 200, 300, 400));
+    scroller.appendChild(element);
+
+    createBadge(element).setLlmHealth({ state: 'active' });
+
+    expect(badgeElement().style.top).toBe(`${shown.bottom - 4 - BADGE_HEIGHT}px`);
+  });
+
   it('follows the element as the page scrolls or resizes', () => {
     const { element, moveTo } = elementWith(BOX);
     createBadge(element).setLlmHealth({ state: 'active' });

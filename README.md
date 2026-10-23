@@ -56,7 +56,7 @@ For development with hot reload, run `npm run dev`.
 
 ```
 content script                    background worker
-(textarea, overlay, checker)      (Engine -> Slip[])
+(Field, highlights, checker)      (Engine -> Slip[])
 
   --check-field msg------->         --POST /v2/check--------->  LanguageTool
   --check-sentence msg---->         --POST chat/completions-->  GLM (Z.ai) or Gemini (Google)
@@ -67,7 +67,11 @@ The LLM leg goes to whichever provider is selected in Settings; both take the sa
 
 Network calls run in the background service worker so API keys never reach page scripts and page CSP doesn't matter.
 
-- `entrypoints/content/`: attaches to textareas (on install and update the background worker also injects it into tabs already open, so they need no reload), renders underline overlays ([field-overlay.ts](entrypoints/content/field-overlay.ts)), and leaves the page once the extension reloads or updates ([page.ts](entrypoints/content/page.ts), tested in [page.test.ts](entrypoints/content/page.test.ts) on a happy-dom page).
+- `entrypoints/content/`: makes every textarea a Field (on install and update the background worker also injects it into tabs already open, so they need no reload), ends a Field when its textarea leaves the page, and leaves the page once the extension reloads or updates ([page.ts](entrypoints/content/page.ts), tested in [page.test.ts](entrypoints/content/page.test.ts) on a happy-dom page with a stand-in for CSS highlights).
+  - [fields/field.ts](entrypoints/content/fields/field.ts): what every kind of Field shares. A `FieldAdapter` delivers reads, each a snapshot of the text with a way to build ranges over that same text; the Field passes each read to the checker, draws the Slips, shows the LLM badge and answers the Hover card's buttons (Apply, Ignore here, Add to dictionary). Tested in [field.test.ts](entrypoints/content/fields/field.test.ts) with an in-memory adapter.
+  - [fields/textarea.ts](entrypoints/content/fields/textarea.ts): the textarea adapter. It reads on `input`, ranges with `createValueRange` (`OpaqueRange`), and applies a fix through `execCommand('insertText')`, so one Ctrl+Z undoes it. A pre-filled textarea is checked at once unless it is disabled, read-only or hidden ([fields/hidden.ts](entrypoints/content/fields/hidden.ts)); then it waits for its first `input`.
+  - [underlines.ts](entrypoints/content/underlines.ts): one wavy CSS highlight per Kind (`type-right-spelling`, `-grammar`, `-wording`, `-translation`) shared by every Field on the page. It registers a name again whenever the page cleared or replaced it, never calls `CSS.highlights.clear()`, and on teardown deletes a name only while it still holds our own highlight. Hover finds the Slip under the pointer with `highlightsFromPoint` at the pointer and 3 and 6 px above it, since the line sits below the glyphs. Tested in [underlines.test.ts](entrypoints/content/underlines.test.ts).
+  - [badge.ts](entrypoints/content/badge.ts) draws the LLM badge in a Field's bottom-right corner; [hover.ts](entrypoints/content/hover.ts) and [hover-card.ts](entrypoints/content/hover-card.ts) open, place and close the Hover card.
 - `entrypoints/background.ts`: receives text via message, calls the engine with the current Settings (English variant, LanguageTool URL, LLM provider and key, Mixed-in language). LLM checks go through one shared gate ([llm-gate.ts](lib/llm-gate.ts)): after a failure it refuses every check for 60 s without contacting the provider (the pause survives worker restarts in `storage.session`), and broadcasts the failure's reason (and the next success) to every tab, so all LLM badges change together; the broadcast never carries the key. A failure belongs to the Provider and key it happened with: changing either clears it, and a failure that lands after the change is dropped. Also applies `record-slips` / `reset-tally` messages to the Popup's counts one at a time.
 - `entrypoints/options/`: Options page (right-click the extension icon → Options). Switching LLM provider clears the key and reopens the setup page.
 - `entrypoints/popup/`: toolbar Popup: Slip counts per kind (with its total) and type label, most frequent first, a reset button, and "Exclude this site from LLM" / "Turn off on this site" buttons for the current tab.

@@ -26,6 +26,7 @@ export function textareaAdapter(textarea: HTMLTextAreaElement): FieldAdapter {
         if (!delivered && textarea.value && someoneCanType(textarea)) deliver(false);
       }
       textarea.addEventListener('input', (event) => deliver(event instanceof InputEvent && event.isComposing), { signal });
+      textarea.addEventListener('compositionend', () => deliver(false), { signal });
       textarea.addEventListener('focus', deliverPrefilled, { signal });
       deliverPrefilled();
     },

@@ -53,8 +53,11 @@ export interface FieldChecker {
    * `neverFlag` is the spans of `text` that never get a Slip: any Slip
    * touching one is dropped, so it is never drawn or tallied. Pass the spans
    * of this text on every call; they are not followed through edits.
+   * While `composing` (an IME has uncommitted text in the field) the edit is
+   * still followed, but neither Engine checks until an update arrives with
+   * `composing` false, which then checks even if the text did not change.
    */
-  update(text: string, options?: { neverFlag?: readonly TextSpan[] }): Slip[];
+  update(text: string, options?: { neverFlag?: readonly TextSpan[]; composing?: boolean }): Slip[];
   /**
    * The field's current Slips, without re-checking. Call it after Settings
    * change (e.g. the dictionary) to re-render with them applied.
@@ -136,9 +139,20 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (health.state === 'active') llmScheduler?.unblock();
   });
 
-  function update(next: string, updateOptions?: { neverFlag?: readonly TextSpan[] }): Slip[] {
+  /** Whether an update arrived while composing, so the next one that is not owes a check. */
+  let held = false;
+
+  function update(next: string, updateOptions?: { neverFlag?: readonly TextSpan[]; composing?: boolean }): Slip[] {
     tracker.setNeverFlag(updateOptions?.neverFlag ?? []);
-    if (!tracker.applyEdit(next)) return slips();
+    const changed = tracker.applyEdit(next);
+    if (updateOptions?.composing) {
+      held = true;
+      languageTool.cancel();
+      llmScheduler?.cancel();
+      return slips();
+    }
+    if (!changed && !held) return slips();
+    held = false;
     languageTool.schedule();
     llmScheduler?.schedule();
     return slips();

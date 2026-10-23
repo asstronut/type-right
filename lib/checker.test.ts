@@ -382,6 +382,68 @@ describe('createFieldChecker', () => {
     });
   });
 
+  describe('while an IME is composing', () => {
+    it('sends nothing to LanguageTool, however long the pause', async () => {
+      const field = setup();
+      field.update('I will nihao', { composing: true });
+
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 10);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('drops a check that was already waiting for the user to pause', async () => {
+      const field = setup();
+      field.update('I will recieve it');
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS - 100);
+
+      field.update('I will recieve it nihao', { composing: true });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 10);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('checks once after the update that says composing is over, even when the text did not change', async () => {
+      const field = setup();
+      field.update('I will recieve nihao', { composing: true });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 2);
+
+      field.update('I will recieve nihao', { composing: false });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      expect(sentTexts()).toEqual(['I will recieve nihao']);
+      expect(latest.map((e) => e.start)).toEqual(['I will recieve nihao'.indexOf('recieve')]);
+    });
+
+    it('drops a Slip the composing text touches', async () => {
+      const field = setup();
+      await field.type('I will recieve it');
+
+      expect(field.update('I will recienihaove it', { composing: true })).toEqual([]);
+    });
+
+    it('keeps shifting the Slips it does not touch', async () => {
+      const field = setup();
+      await field.type('I will recieve it');
+
+      const shifted = field.update('Yes, I will recieve it', { composing: true });
+
+      expect(shifted).toEqual([expect.objectContaining({ start: 'Yes, I will recieve it'.indexOf('recieve') })]);
+    });
+
+    it('holds the LLM check too', async () => {
+      const field = setup(undefined, true);
+      field.update('She ate a apple.', { composing: true });
+
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS * 4);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      field.update('She ate a apple.', { composing: false });
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS);
+      expect(llmSent()).toEqual(['She ate a apple.']);
+    });
+  });
+
   describe('paragraph scope', () => {
     it('sends only the paragraph being edited, not the whole field', async () => {
       const field = setup();

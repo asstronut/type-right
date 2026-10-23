@@ -1,4 +1,5 @@
 import type { Slip } from '../../lib/slips';
+import type { ApplyResult } from './fields/field';
 import { HoverCard } from './hover-card';
 import type { SlipHit } from './underlines';
 
@@ -7,13 +8,18 @@ const OPEN_DELAY_MS = 300;
 /** Grace period for the pointer to travel from the underline onto the card. */
 const CLOSE_DELAY_MS = 250;
 
+const APPLY_NOTES: Partial<Record<ApplyResult, string>> = {
+  unchanged: "This editor didn't take the fix. Retype it yourself.",
+  changedWrongly: 'Apply went wrong here. Press Ctrl+Z to undo it.',
+};
+
 /** What the Hover card's buttons do for the Field whose Slip it shows. */
 export interface HoverTarget {
   /** The Field's text the Slip flags, as it is now. */
   textOf(slip: Slip): string;
   canApply(slip: Slip): boolean;
   /** Replaces the Slip's text with `suggestion`, unless it no longer reads `flagged`. */
-  apply(slip: Slip, flagged: string, suggestion: string): void;
+  apply(slip: Slip, flagged: string, suggestion: string): Promise<ApplyResult>;
   ignore(slip: Slip): void;
   addToDictionary(word: string): void;
 }
@@ -86,19 +92,24 @@ export class HoverController {
     if (this.shown?.target === target) this.hide();
   }
 
-  private open(target: HoverTarget, { slip, rect }: SlipHit): void {
+  private open(target: HoverTarget, hit: SlipHit, note?: string): void {
+    const { slip, rect } = hit;
     this.cancelClose();
     const flagged = target.textOf(slip);
     this.card.show(
       {
         slip,
         onApply:
-          slip.kind === 'spelling' && target.canApply(slip)
+          !note && slip.kind === 'spelling' && target.canApply(slip)
             ? (suggestion) => {
                 this.close();
-                target.apply(slip, flagged, suggestion);
+                void target.apply(slip, flagged, suggestion).then((result) => {
+                  const reason = APPLY_NOTES[result];
+                  if (reason) this.open(target, hit, reason);
+                });
               }
             : undefined,
+        note,
         onIgnore: () => {
           this.close();
           target.ignore(slip);

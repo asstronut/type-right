@@ -88,6 +88,10 @@ const STYLES = `
     font-weight: 600;
     overflow-wrap: anywhere;
   }
+  .note {
+    margin: 8px 0 0;
+    font-weight: 600;
+  }
   .none {
     color: #71717a;
     font-style: italic;
@@ -131,6 +135,8 @@ export interface HoverCardContent {
   onIgnore: () => void;
   /** Present only for single-word spelling Slips: stops the word being flagged anywhere. */
   onAddToDictionary?: () => void;
+  /** Why Apply is gone after a failed attempt; the card then opens with the answer shown. */
+  note?: string;
 }
 
 /**
@@ -220,17 +226,21 @@ export class HoverCard {
   }
 }
 
-function renderCard({ slip, onApply, onIgnore, onAddToDictionary }: HoverCardContent): HTMLElement {
+function renderCard({ slip, onApply, onIgnore, onAddToDictionary, note }: HoverCardContent): HTMLElement {
   const card = el('div', 'card');
 
   const header = el('div', 'header');
   header.append(el('span', `kind ${slip.kind}`, KIND_LABELS[slip.kind]), el('span', 'type', slip.type));
   card.append(header, el('p', 'explanation', slip.explanation));
 
-  const showAnswer = el('button', 'show-answer', 'Show answer');
-  showAnswer.type = 'button';
-  showAnswer.addEventListener('click', () => showAnswer.replaceWith(renderAnswer(slip, onApply)));
-  card.appendChild(showAnswer);
+  if (note) {
+    card.append(renderAnswer(slip, onApply), el('p', 'note', note));
+  } else {
+    const showAnswer = el('button', 'show-answer', 'Show answer');
+    showAnswer.type = 'button';
+    showAnswer.addEventListener('click', () => showAnswer.replaceWith(renderAnswer(slip, onApply)));
+    card.appendChild(showAnswer);
+  }
 
   const actions = el('div', 'actions');
   actions.appendChild(actionButton('Ignore here', 'Hide this slip everywhere in this field until the page reloads', onIgnore));

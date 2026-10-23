@@ -23,7 +23,25 @@ function addEditable(html: string, contenteditable = 'true'): HTMLElement {
   return element;
 }
 
-const nextBatch = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+/** happy-dom's InputEvent drops `targetRanges`. */
+function installTargetRanges(): void {
+  const Base = InputEvent;
+  vi.stubGlobal(
+    'InputEvent',
+    class extends Base {
+      private readonly ranges: StaticRange[];
+      constructor(type: string, init?: InputEventInit & { targetRanges?: StaticRange[] }) {
+        super(type, init);
+        this.ranges = init?.targetRanges ?? [];
+      }
+      override getTargetRanges(): StaticRange[] {
+        return this.ranges;
+      }
+    },
+  );
+}
+
+const nextBatch =() => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
   installStaticRange();
@@ -76,7 +94,7 @@ describe('a Rich editor adapter', () => {
   });
 
   function watch(host: HTMLElement): void {
-    richEditorAdapter(host).watch((read) => reads.push(read), listening.signal);
+    richEditorAdapter(host, () => false).watch((read) => reads.push(read), listening.signal);
   }
 
   it('delivers the text at once, even before anything changes', () => {
@@ -158,13 +176,175 @@ describe('a Rich editor adapter', () => {
     expect(reads).toEqual([]);
   });
 
-  it('offers no Apply and replaces nothing', async () => {
+});
+
+describe('Apply in a Rich editor', () => {
+  let listening: AbortController;
+  let refused: boolean;
+  let execCommand: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    listening = new AbortController();
+    refused = false;
+    execCommand = vi.fn(() => true);
+    installTargetRanges();
+    document.execCommand = execCommand as unknown as typeof document.execCommand;
+  });
+
+  afterEach(() => {
+    listening.abort();
+    vi.useRealTimers();
+    Reflect.deleteProperty(document, 'execCommand');
+  });
+
+  function adapterOn(host: HTMLElement) {
+    const adapter = richEditorAdapter(host, () => refused);
+    adapter.watch(() => undefined, listening.signal);
+    return adapter;
+  }
+
+  /** Runs `replace` to its end, letting the selection wait run out its frame. */
+  async function replace(adapter: ReturnType<typeof adapterOn>, flagged = 'recieve') {
+    const outcome = adapter.replace(SLIP, flagged, 'receive');
+    await vi.advanceTimersByTimeAsync(50);
+    return outcome;
+  }
+
+  function beforeInputsOn(host: HTMLElement, claim = false): InputEvent[] {
+    const seen: InputEvent[] = [];
+    host.addEventListener('beforeinput', (event) => {
+      seen.push(event as InputEvent);
+      if (claim) event.preventDefault();
+    });
+    return seen;
+  }
+
+  describe('canApply', () => {
+    it('is true for a word inside one text node', () => {
+      expect(adapterOn(addEditable('<p>I recieve it.</p>')).canApply(SLIP)).toBe(true);
+    });
+
+    it('is false when formatting splits the word across text nodes', () => {
+      expect(adapterOn(addEditable('<p>I rec<b>iev</b>e it.</p>')).canApply(SLIP)).toBe(false);
+    });
+
+    it('is false once the page learned that an editor refuses fixes', () => {
+      const adapter = adapterOn(addEditable('<p>I recieve it.</p>'));
+      refused = true;
+
+      expect(adapter.canApply(SLIP)).toBe(false);
+    });
+
+    it('is false when the host is not editable', () => {
+      const host = addEditable('<p>I recieve it.</p>');
+      const adapter = adapterOn(host);
+      host.setAttribute('contenteditable', 'false');
+
+      expect(adapter.canApply(SLIP)).toBe(false);
+    });
+  });
+
+  it('is stale, and does nothing, when the live text moved on', async () => {
     const host = addEditable('<p>I recieve it.</p>');
-    const adapter = richEditorAdapter(host);
+    const adapter = adapterOn(host);
+    const events = beforeInputsOn(host);
+    host.firstElementChild!.firstChild!.textContent = 'Nothing here.';
 
-    expect(adapter.canApply(SLIP)).toBe(false);
-    await adapter.replace(SLIP, 'recieve', 'receive');
+    expect(await replace(adapter)).toBe('stale');
+    expect(events).toEqual([]);
+    expect(execCommand).not.toHaveBeenCalled();
+  });
 
-    expect(host.textContent).toBe('I recieve it.');
+  it('is stale before it watches anything', async () => {
+    const adapter = richEditorAdapter(addEditable('<p>I recieve it.</p>'), () => false);
+
+    expect(await replace(adapter)).toBe('stale');
+  });
+
+  it('is stale when formatting splits the word', async () => {
+    const adapter = adapterOn(addEditable('<p>I rec<b>iev</b>e it.</p>'));
+
+    expect(await replace(adapter)).toBe('stale');
+  });
+
+  it('selects the word, focuses the editor and dispatches beforeinput with the fix and where it goes', async () => {
+    const host = addEditable('<p>I recieve it.</p>');
+    const adapter = adapterOn(host);
+    const events = beforeInputsOn(host);
+
+    expect(await replace(adapter)).toBe('attempted');
+
+    expect(document.activeElement).toBe(host);
+    expect(document.getSelection()!.toString()).toBe('recieve');
+    expect(events).toHaveLength(1);
+    const [event] = events;
+    expect(event!.inputType).toBe('insertReplacementText');
+    expect(event!.data).toBe('receive');
+    expect(event!.dataTransfer!.getData('text/plain')).toBe('receive');
+    const [target] = event!.getTargetRanges();
+    expect(textUnder(target!)).toBe('recieve');
+  });
+
+  it('waits for the editor to sync its selection, but only for a frame', async () => {
+    const host = addEditable('<p>I recieve it.</p>');
+    const adapter = adapterOn(host);
+    const events = beforeInputsOn(host);
+
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const outcome = adapter.replace(SLIP, 'recieve', 'receive');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(events).toHaveLength(0);
+
+    document.dispatchEvent(new Event('selectionchange'));
+    await expect(outcome).resolves.toBe('attempted');
+    expect(events).toHaveLength(1);
+
+    vi.unstubAllGlobals();
+    installStaticRange();
+    installTargetRanges();
+    const capped = adapter.replace(SLIP, 'recieve', 'receive');
+    await vi.advanceTimersByTimeAsync(50);
+    await expect(capped).resolves.toBe('attempted');
+    expect(events).toHaveLength(2);
+  });
+
+  it('falls back to the editing command when nobody claimed the event and the word is still there', async () => {
+    const adapter = adapterOn(addEditable('<p>I recieve it.</p>'));
+
+    await replace(adapter);
+
+    expect(execCommand).toHaveBeenCalledWith('insertText', false, 'receive');
+  });
+
+  it('does not use the editing command when an editor claimed the event', async () => {
+    const host = addEditable('<p>I recieve it.</p>');
+    const adapter = adapterOn(host);
+    beforeInputsOn(host, true);
+
+    expect(await replace(adapter)).toBe('attempted');
+    expect(execCommand).not.toHaveBeenCalled();
+  });
+
+  it('does not use the editing command once the word changed under the event', async () => {
+    const host = addEditable('<p>I recieve it.</p>');
+    const adapter = adapterOn(host);
+    host.addEventListener('beforeinput', () => {
+      host.firstElementChild!.firstChild!.textContent = 'I receive it.';
+    });
+
+    await replace(adapter);
+
+    expect(execCommand).not.toHaveBeenCalled();
+  });
+
+  it('never uses the editing command in Slate', async () => {
+    const host = addEditable('<p>I recieve it.</p>');
+    host.setAttribute('data-slate-editor', 'true');
+    const adapter = adapterOn(host);
+
+    expect(await replace(adapter)).toBe('attempted');
+    expect(execCommand).not.toHaveBeenCalled();
   });
 });

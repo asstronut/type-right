@@ -39,15 +39,16 @@ export function textareaAdapter(textarea: HTMLTextAreaElement): FieldAdapter {
      * beforeinput/input events (and keeps the fix on preview or submit).
      */
     async replace(slip, flagged, suggestion) {
-      if (textarea.value.slice(slip.start, slip.end) !== flagged) return;
+      if (textarea.value.slice(slip.start, slip.end) !== flagged) return 'stale';
       textarea.focus();
       textarea.setSelectionRange(slip.start, slip.end);
-      if (document.execCommand('insertText', false, suggestion)) return;
+      if (document.execCommand('insertText', false, suggestion)) return 'replaced';
 
       textarea.setRangeText(suggestion, slip.start, slip.end, 'end');
       textarea.dispatchEvent(
         new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: suggestion }),
       );
+      return 'replaced';
     },
   };
 }

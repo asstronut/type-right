@@ -11,7 +11,7 @@ This directory is the maintained source for verifying what a Type Right user see
 
 ## Driving conventions
 
-- Field 0 is the test page's plain textarea; field 1 is the short, scrollable one.
+- Field 0 is the test page's plain textarea; field 1 is the short, scrollable one; field 2 is taller than the window and sits under a sticky footer.
 - Every recipe changes Settings or the Tally only in the throwaway profile. To start from the baseline again, run `cleanup`, then `launch`.
 - Wait for underlines with `slips --wait <text>`, not a fixed sleep. A LanguageTool check runs about 600 ms after typing stops, plus the API's round trip.
 - Use lowercase made-up words for spelling Slips. LanguageTool treats capitalised unknown words (`Zorblat`) as names and does not flag them.
@@ -37,4 +37,5 @@ Each feature file has an H1 title and one paragraph, then four H2s in this order
 - [Ignore here and the Dictionary](./ignore-and-dictionary.md): hide one Slip in a Field, or stop a word being flagged anywhere, and manage the list on the Options page.
 - [Popup Tally](./popup-tally.md): counts of finished Slips by kind and type in the toolbar Popup, and resetting them.
 - [Site controls](./site-controls.md): turn Type Right off on a site, or keep a site's text away from the LLM.
+- [Rich editors](./rich-editors.md): fixture pages on the real editor libraries, and the `V rich-editors` matrix that gates each Rich editor ticket.
 - [LLM check and consent](./llm-check.md): the first-run setup page (Provider, API key, consent), the LLM badge, and wording and Translation Slips from the LLM.

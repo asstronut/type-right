@@ -14,9 +14,7 @@ export interface RichTextReader {
 }
 
 export interface RegionRules {
-  /** Selectors of content that is not the user's prose: out of the text, an empty line in its place. */
   notChecked: readonly string[];
-  /** Selectors of inline content that stays in the text as its visible label but never gets a Slip. */
   neverFlag: readonly string[];
 }
 

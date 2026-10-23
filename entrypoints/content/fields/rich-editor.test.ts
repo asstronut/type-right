@@ -204,7 +204,6 @@ describe('Apply in a Rich editor', () => {
     return adapter;
   }
 
-  /** Runs `replace` to its end, letting the selection wait run out its frame. */
   async function replace(adapter: ReturnType<typeof adapterOn>, flagged = 'recieve') {
     const outcome = adapter.replace(SLIP, flagged, 'receive');
     await vi.advanceTimersByTimeAsync(50);

@@ -106,8 +106,7 @@ export function runPage(options: PageOptions): void {
   });
 
   const hover = new HoverController();
-  /** Set once a Rich editor on this page refused an Apply; kept here so a rebuilt editor or a site switched off and on doesn't forget. */
-  let applyRefused = false;
+  let applyRefusedOnPage = false;
   /** Set while Type Right is running on this page. */
   let running: Running | null = null;
 
@@ -127,7 +126,7 @@ export function runPage(options: PageOptions): void {
       },
       noticeReload,
       onApplyRefused: () => {
-        applyRefused = true;
+        applyRefusedOnPage = true;
       },
     };
 
@@ -138,7 +137,7 @@ export function runPage(options: PageOptions): void {
 
     function attachRichEditor(host: HTMLElement | null): void {
       if (!host || fields.has(host) || !canBeRichField(host)) return;
-      fields.set(host, createField(richEditorAdapter(host, () => applyRefused), deps));
+      fields.set(host, createField(richEditorAdapter(host, () => applyRefusedOnPage), deps));
     }
 
     function attachAllWithin(root: ParentNode): void {

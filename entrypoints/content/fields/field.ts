@@ -20,7 +20,6 @@ export type ApplyResult = 'accepted' | 'unchanged' | 'changedWrongly' | 'inconcl
 /** What an adapter's `replace` did: refused because the live text moved on, made the edit for certain (textarea), or tried an edit the editor may not have kept (Rich editor). */
 export type ReplaceOutcome = 'stale' | 'replaced' | 'attempted';
 
-/** How long after an attempted edit the Field reads its text again to see whether the editor kept it. */
 export const APPLY_VERDICT_MS = 150;
 
 /** What differs between the kinds of Field (textarea, Rich editor); the rest is `createField`. */
@@ -96,7 +95,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
       if (outcome === 'stale') return 'stale';
       if (outcome === 'replaced') return 'accepted';
 
-      const interfered = await untilVerdict();
+      const interfered = await userTypedBeforeVerdict();
       if (interfered || signal.aborted || !latest) return 'inconclusive';
       const expected = before.slice(0, slip.start) + suggestion + before.slice(slip.end);
       if (latest.text === expected) return 'accepted';
@@ -110,8 +109,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   };
 
   let interference: { happened: boolean } | undefined;
-  /** Waits out the verdict delay; resolves whether the user typed or composed meanwhile. */
-  async function untilVerdict(): Promise<boolean> {
+  async function userTypedBeforeVerdict(): Promise<boolean> {
     const watching = { happened: false };
     const waiting = new AbortController();
     const note = () => void (watching.happened = true);

@@ -426,7 +426,6 @@ describe('Apply', () => {
     return { page, slip, target: page.hoverTarget() };
   }
 
-  /** Starts an Apply, runs `during` once the adapter has answered, and settles it once the verdict delay has passed. */
   async function applyThrough(
     ctx: Awaited<ReturnType<typeof setupWithSlip>>,
     during: () => void = () => undefined,

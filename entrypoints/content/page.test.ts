@@ -177,7 +177,6 @@ async function openHoverCard(field: HTMLElement): Promise<void> {
 
 let contexts: ContentScriptContext[] = [];
 let removeHighlights: () => void;
-/** The card's shadow root is closed to the page; the tests keep the roots that get attached. */
 let cardRoots: ShadowRoot[];
 
 function card(): ShadowRoot {

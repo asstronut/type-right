@@ -47,7 +47,6 @@ export function richEditorAdapter(host: HTMLElement, applyRefused: () => boolean
     return latest;
   }
 
-  /** The Slip's span, when it sits inside one text node of `read`. */
   function inOneTextNode(read: FieldRead, slip: Slip): StaticRange | undefined {
     const range = read.rangeFor(slip);
     const { startContainer, endContainer } = range;

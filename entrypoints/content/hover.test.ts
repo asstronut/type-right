@@ -40,7 +40,6 @@ function cardIsOpen(): boolean {
 }
 
 let hover: HoverController;
-/** The card's shadow root is closed to the page; the test keeps the root the card attaches. */
 let cardRoot: ShadowRoot;
 
 beforeEach(() => {

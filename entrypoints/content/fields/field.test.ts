@@ -164,6 +164,22 @@ describe('checking what is read', () => {
     expect(page.languageTool).toHaveBeenCalled();
   });
 
+  it('draws the underlines from a newer read even when its text is the same', async () => {
+    const page = setup();
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const [before] = page.drawn()!;
+
+    page.deliver(TEXT);
+    page.languageTool.mockClear();
+
+    const [after] = page.drawn()!;
+    expect(page.underlined(TEXT)).toEqual(['recieve']);
+    expect(after!.range).not.toBe(before!.range);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(page.languageTool).not.toHaveBeenCalled();
+  });
+
   it('drops a read once the extension has reloaded', async () => {
     const page = setup();
     page.reload();
@@ -271,6 +287,21 @@ describe('the Hover card', () => {
     expect(page.hover.closeFor).toHaveBeenCalledWith(target);
     page.hover.closeFor.mockClear();
     page.field.dispose();
+    expect(page.hover.closeFor).toHaveBeenCalledWith(target);
+  });
+
+  it('stays open when a read brings the same text again, and closes for a read of new text', async () => {
+    const page = setup();
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await page.pointAt(page.drawn()![0]!.slip);
+    const target = page.hoverTarget();
+    page.hover.closeFor.mockClear();
+
+    page.deliver(TEXT);
+    expect(page.hover.closeFor).not.toHaveBeenCalled();
+
+    page.deliver(`${TEXT} More.`);
     expect(page.hover.closeFor).toHaveBeenCalledWith(target);
   });
 

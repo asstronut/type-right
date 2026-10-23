@@ -125,8 +125,9 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
 
   adapter.watch((read) => {
     if (deps.noticeReload()) return;
+    // A re-render of the same text keeps the card: the pointer is still on the same words.
+    if (read.text !== latest?.text) hover.closeFor(target);
     latest = read;
-    hover.closeFor(target);
     render(checker.update(read.text));
   }, signal);
 

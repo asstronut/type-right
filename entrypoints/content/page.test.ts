@@ -371,17 +371,26 @@ describe('a textarea that already holds text', () => {
     expect(underlinedRanges()).toHaveLength(1);
   });
 
-  it.each<[string, (field: HTMLTextAreaElement) => void]>([
-    ['disabled', (field) => void (field.disabled = true)],
-    ['read-only', (field) => void (field.readOnly = true)],
-    ['aria-hidden', (field) => field.setAttribute('aria-hidden', 'true')],
-    ['inert', (field) => field.setAttribute('inert', '')],
-    ['without a box', (field) => void vi.spyOn(field, 'getBoundingClientRect').mockReturnValue(new DOMRect())],
-  ])('sends nothing to LanguageTool until its first input when it is %s', async (_, makeUnused) => {
+  type Unused = [string, (field: HTMLTextAreaElement) => void, (field: HTMLTextAreaElement) => void];
+  const UNUSED: Unused[] = [
+    ['disabled', (field) => void (field.disabled = true), (field) => void (field.disabled = false)],
+    ['read-only', (field) => void (field.readOnly = true), (field) => void (field.readOnly = false)],
+    ['aria-hidden', (field) => field.setAttribute('aria-hidden', 'true'), (field) => field.removeAttribute('aria-hidden')],
+    ['inert', (field) => field.setAttribute('inert', ''), (field) => field.removeAttribute('inert')],
+    [
+      'without a box',
+      (field) => void vi.mocked(field.getBoundingClientRect).mockReturnValue(new DOMRect()),
+      (field) => void vi.mocked(field.getBoundingClientRect).mockReturnValue(TEXTAREA_BOX),
+    ],
+  ];
+
+  it.each(UNUSED)('sends nothing to LanguageTool until its first input when it is %s', async (_, makeUnused) => {
     const field = addFilledField(TEXT);
     makeUnused(field);
     const page = createPage();
 
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+    field.dispatchEvent(new FocusEvent('focus'));
     await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
     expect(page.worker.languageTool).not.toHaveBeenCalled();
     expect(underlinedRanges()).toEqual([]);
@@ -389,6 +398,26 @@ describe('a textarea that already holds text', () => {
     type(field, `${TEXT} More.`);
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(page.worker.languageTool).toHaveBeenCalledWith(`${TEXT} More.`);
+  });
+
+  it.each(UNUSED)('is checked once, on its first focus, after it was %s at the start', async (_, makeUnused, makeUsable) => {
+    const field = addFilledField(TEXT);
+    makeUnused(field);
+    const page = createPage();
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+
+    makeUsable(field);
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+    expect(page.worker.languageTool).not.toHaveBeenCalled();
+    field.dispatchEvent(new FocusEvent('focus'));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    field.dispatchEvent(new FocusEvent('blur'));
+    field.dispatchEvent(new FocusEvent('focus'));
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+
+    expect(page.worker.languageTool).toHaveBeenCalledOnce();
+    expect(page.worker.languageTool).toHaveBeenCalledWith(TEXT);
+    expect(underlinedRanges()).toHaveLength(1);
   });
 });
 

@@ -39,9 +39,14 @@ export function createLanguageToolEngine(config: LanguageToolConfig): Engine {
       }
 
       const data = (await response.json()) as LanguageToolResponse;
-      return data.matches.map((match) => toSlip(text, match));
+      return data.matches.filter((match) => fitsIn(text, match)).map((match) => toSlip(text, match));
     },
   };
+}
+
+/** A server set in Settings may send a match that names no words of `text`. */
+function fitsIn(text: string, { offset, length }: LanguageToolMatch): boolean {
+  return Number.isInteger(offset) && Number.isInteger(length) && offset >= 0 && length > 0 && offset + length <= text.length;
 }
 
 function toSlip(text: string, match: LanguageToolMatch): Slip {

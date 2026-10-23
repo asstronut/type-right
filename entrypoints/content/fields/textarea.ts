@@ -17,8 +17,17 @@ export function textareaAdapter(textarea: HTMLTextAreaElement): FieldAdapter {
     element: textarea,
 
     watch(onRead, signal) {
-      textarea.addEventListener('input', (event) => onRead(read(event instanceof InputEvent && event.isComposing)), { signal });
-      if (textarea.value && someoneCanType(textarea)) onRead(read(false));
+      let delivered = false;
+      function deliver(composing: boolean): void {
+        delivered = true;
+        onRead(read(composing));
+      }
+      function deliverPrefilled(): void {
+        if (!delivered && textarea.value && someoneCanType(textarea)) deliver(false);
+      }
+      textarea.addEventListener('input', (event) => deliver(event instanceof InputEvent && event.isComposing), { signal });
+      textarea.addEventListener('focus', deliverPrefilled, { signal });
+      deliverPrefilled();
     },
 
     canApply: () => true,

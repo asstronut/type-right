@@ -71,6 +71,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     if (!latest) return;
     const { rangeFor } = latest;
     underlines.draw(field, slips.map((slip) => ({ slip, range: rangeFor(slip) })));
+    badge.followMove();
   }
 
   const target: HoverTarget = {

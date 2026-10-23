@@ -34,6 +34,7 @@ const BADGE_INSET_PX = { right: 18, bottom: 4 };
 
 export interface Badge {
   setLlmHealth(health: LlmHealth): void;
+  followMove(): void;
   destroy(): void;
 }
 
@@ -86,6 +87,7 @@ export function createBadge(element: HTMLElement): Badge {
       badge.style.background = color;
       place();
     },
+    followMove: place,
     destroy() {
       listeners.abort();
       resizeObserver.disconnect();

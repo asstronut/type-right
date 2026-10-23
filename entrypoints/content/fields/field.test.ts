@@ -188,6 +188,23 @@ describe('checking what is read', () => {
   });
 });
 
+describe('the badge', () => {
+  it('follows an element that moved without a scroll or resize once the Field is read again', () => {
+    const page = setup();
+    const measure = vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 200, 300, 80));
+    page.deliver(TEXT);
+    const badge = document.querySelector<HTMLElement>('[data-type-right-badge]')!;
+    const top = () => parseFloat(badge.style.top);
+    expect(top()).toBeGreaterThan(200);
+
+    measure.mockReturnValue(new DOMRect(0, 114, 300, 80));
+    const before = top();
+    page.deliver(`${TEXT} More.`);
+
+    expect(top()).toBe(before - 86);
+  });
+});
+
 describe('Ignore here', () => {
   it('removes that Slip underline, keeps the others and stays ignored after the next check', async () => {
     const page = setup();

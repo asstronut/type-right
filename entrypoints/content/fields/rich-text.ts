@@ -15,24 +15,32 @@ export interface RichTextReader {
 
 export interface RegionRules {
   notChecked: readonly string[];
+  trailing: readonly string[];
   neverFlag: readonly string[];
 }
 
 export const REGION_RULES: RegionRules = {
   notChecked: ['pre', 'blockquote', '.ql-code-block'],
+  // #73: regions the editor appends after the typed text. Also not checked, and they add no line at the end.
+  trailing: ['.gmail_signature', '.gmail_signature_prefix', '.gmail_quote'],
   neverFlag: ['code', 'ts-mention', '[data-type="mention"]', '[contenteditable="false"]', 'img.emoji', 'img[data-emoji]'],
 };
 
 interface Regions {
   notChecked: string;
+  trailing: string;
   neverFlag: string;
 }
 
 export function createRichTextReader(host: HTMLElement, regionRules: RegionRules = REGION_RULES): RichTextReader {
-  const regions = { notChecked: regionRules.notChecked.join(','), neverFlag: regionRules.neverFlag.join(',') };
+  const regions = {
+    notChecked: [...regionRules.notChecked, ...regionRules.trailing].join(','),
+    trailing: regionRules.trailing.join(','),
+    neverFlag: regionRules.neverFlag.join(','),
+  };
   return {
     read() {
-      const { text, segments, neverFlag } = layOut(linesOf(host, regions));
+      const { text, segments, neverFlag } = layOut(endAtLastCheckedLine(linesOf(host, regions)));
       return { text, neverFlag, rangeFor: (span) => rangeOver(host, segments, span) };
     },
   };
@@ -46,6 +54,9 @@ interface Piece {
 }
 
 type Line = Piece[];
+
+const standIns = new WeakSet<Line>();
+const trailingStandIns = new WeakSet<Line>();
 
 type Item = { kind: 'block'; lines: Line[] } | { kind: 'run'; lines: Line[]; isGap: boolean };
 
@@ -156,7 +167,7 @@ function itemsOf(block: Element, regions: Regions): Item[] {
             break;
           case 'region':
             endRun();
-            items.push({ kind: 'block', lines: [[]] });
+            items.push({ kind: 'block', lines: [standIn(matches(child, regions.trailing))] });
             break;
           case 'chip': {
             const label = labelOf(child, regions);
@@ -185,6 +196,22 @@ function itemsOf(block: Element, regions: Regions): Item[] {
   visit(block);
   endRun();
   return items;
+}
+
+function standIn(trailing: boolean): Line {
+  const line: Line = [];
+  standIns.add(line);
+  if (trailing) trailingStandIns.add(line);
+  return line;
+}
+
+function endAtLastCheckedLine(lines: Line[]): Line[] {
+  if (!trailingStandIns.has(lines.at(-1) ?? [])) return lines;
+  let end = lines.length;
+  const dropsOff = (line: Line): boolean =>
+    trailingStandIns.has(line) || (!standIns.has(line) && textOf(line).trim() === '');
+  while (end > 1 && dropsOff(lines[end - 1]!)) end--;
+  return lines.slice(0, end);
 }
 
 function startRun(): Run {

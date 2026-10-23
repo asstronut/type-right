@@ -20,8 +20,8 @@ const seededValue = () => [
   paragraph('Hi team, this is a short note about the weekly report. It is ready for review and the totals are in the sheet.'),
   paragraph(FILLER),
   paragraph('Please check the numbers before noon. ', { type: 'mention', children: [{ text: '' }] }, { text: ' will merge the changes after that.' }),
-  { type: 'code-block', children: [{ text: 'if (invoice.recieve) {\n  send(invoice);\n}' }] },
-  { type: 'block-quote', children: [{ text: 'Budi wrote: please recieve the files by noon and confirm.' }] },
+  { type: 'code-block', children: [{ text: 'if (invoice.adress) {\n  send(invoice);\n}' }] },
+  { type: 'block-quote', children: [{ text: 'Budi wrote: please send the files to the new adress by noon and confirm.' }] },
   paragraph('To refresh the numbers I ran ', { text: 'refresh_all.py', code: true }, ' this morning, then checked the totals twice.'),
   paragraph('There is one seperate task left, so I will definately finish it before the weekend.'),
 ];
@@ -104,8 +104,8 @@ function seeds() {
   return [
     textboxAttributes(root),
     check('mention as a void inline', chip?.textContent.startsWith('@Dana') && chip.closest('p') && current.editor.isVoid({ type: 'mention' }), chip?.outerHTML),
-    check('code block', pre?.textContent.includes('recieve'), 'pre'),
-    check('blockquote', quote?.textContent.includes('recieve'), 'blockquote'),
+    check('code block', pre?.textContent.includes('adress'), 'pre'),
+    check('blockquote', quote?.textContent.includes('adress'), 'blockquote'),
     check('inline code', code?.textContent === 'refresh_all.py', 'code from renderLeaf'),
     check('typing block after the seeded regions', block.tagName === 'P' && hasStubWord(block.textContent), block.textContent),
     tallerThanScroller(root, scroller),

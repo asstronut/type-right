@@ -1,5 +1,6 @@
 {
   "recieve": { "kind": "spelling", "type": "Spelling mistake", "explanation": "Possible spelling mistake found.", "suggestions": ["receive"] },
+  "adress": { "kind": "spelling", "type": "Spelling mistake", "explanation": "Possible spelling mistake found.", "suggestions": ["address"] },
   "seen": { "kind": "grammar", "type": "Possible grammatical error", "explanation": "Use the past simple here.", "suggestions": ["saw"] },
   "teh": { "kind": "spelling", "type": "Spelling mistake", "explanation": "Possible spelling mistake found.", "suggestions": ["the"] },
   "occured": { "kind": "spelling", "type": "Spelling mistake", "explanation": "Possible spelling mistake found.", "suggestions": ["occurred"] },

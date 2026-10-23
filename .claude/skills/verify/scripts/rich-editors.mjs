@@ -95,6 +95,11 @@ const PAGE_LIB = `(() => {
     }
     return found && box(found.getBoundingClientRect());
   };
+  tr.typedSlip = (word) => {
+    const at = tr.wordRect(word);
+    return (at && tr.highlights().find((h) => h.inHost && h.connected && !h.inNotChecked && h.text === word && h.rect
+      && Math.abs(h.rect.left - at.left) <= 2 && Math.abs(h.rect.top - at.top) <= 2)) ?? null;
+  };
   tr.isBold = (word) => {
     const walker = document.createTreeWalker(tr.host(), NodeFilter.SHOW_TEXT);
     let last = null;
@@ -158,11 +163,9 @@ const ROWS = [
     const top1 = await c.js(`${scroller}.scrollTop`);
     pre(top1 !== top0, `the Field's container did not scroll (scrollTop ${top0})`);
     await c.sleep(300);
-    const after = (await c.highlights()).find((h) => h.inHost && h.text === 'recieve');
-    expect(after, 'the range on "recieve" is gone after scrolling');
-    const word = await c.js(`__tr.wordRect('recieve')`);
-    c.note({ scrolled: top0 - top1, before: before.rect, after: after.rect, word });
-    expect(Math.abs(after.rect.top - word.top) <= 2 && Math.abs(after.rect.left - word.left) <= 2, 'the range is no longer on the word after scrolling');
+    const after = await c.typedSlip('recieve');
+    c.note({ scrolled: top0 - top1, before: before.rect, after: after?.rect, word: await c.js(`__tr.wordRect('recieve')`) });
+    expect(after, 'no range on the typed "recieve" (±2 px) after scrolling');
   }),
   row('hover-card', 'Parity checklist', ALL, async (c) => {
     await c.typeAtEnd(SLIP);
@@ -184,7 +187,7 @@ const ROWS = [
     expect(await c.hover(slip.rect), 'no Hover card opened');
     expect(await c.clickCard('Ignore here'), 'the card has no "Ignore here" button');
     expect(await c.waitGone('recieve'), '"recieve" is still underlined after Ignore here');
-    expect((await c.highlights()).some((h) => h.inHost && h.text === 'seen'), 'Ignore here also removed the other Slip');
+    expect(await c.typedSlip('seen'), 'Ignore here also removed the other Slip');
   }),
   row('dictionary', 'Parity checklist', ALL, async (c) => {
     const word = c.column.dictionaryWord;
@@ -256,17 +259,14 @@ const ROWS = [
     await c.js(`fixture.bold('recieve')`);
     await c.sleep(300);
     pre(await c.js(`__tr.isBold('recieve')`), 'the fixture did not bold "recieve"');
-    expect(await c.until(async () => (await c.highlights()).some((h) => h.inHost && h.connected && h.text === 'recieve'), 3000), 'no live range on "recieve" after bolding it');
+    expect(await c.until(() => c.typedSlip('recieve'), 3000), 'no live range on the typed "recieve" after bolding it');
   }),
   row('rerender-remote', 'Robustness', RICH, async (c) => {
     await c.typeAtEnd(SLIP);
     expect(await c.waitSlip('recieve'), 'no range on "recieve"');
     await c.js(`fixture.remoteEdit('A collaborator added this line above.')`);
     pre((await c.js('__tr.text()')).startsWith('A collaborator added this line above.'), 'the remote edit did not land');
-    expect(await c.until(async () => {
-      const word = await c.js(`__tr.wordRect('recieve')`);
-      return (await c.highlights()).some((h) => h.inHost && h.connected && h.text === 'recieve' && Math.abs(h.rect.top - word.top) <= 2);
-    }, 3000), 'no live range on "recieve" after the remote edit');
+    expect(await c.until(() => c.typedSlip('recieve'), 3000), 'no live range on the typed "recieve" after the remote edit');
   }),
   row('replaced-root', 'Robustness', RICH, async (c) => {
     await c.typeAtEnd(SLIP);
@@ -359,17 +359,19 @@ const ROWS = [
   row('apply-timing', 'Apply timing', RICH, async (c) => {
     const trials = { 1: [], 4: [] };
     for (const rate of [1, 4]) {
-      await c.send('Emulation.setCPUThrottlingRate', { rate });
-      try {
-        for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 20; i++) {
+        await c.load();
+        await c.send('Emulation.setCPUThrottlingRate', { rate });
+        let outcome;
+        try {
           await c.typeAtEnd(SLIP);
-          const outcome = (await c.waitSlip('recieve')) ? await c.applyOnce() : { result: 'no underline' };
-          trials[rate].push(outcome.result);
-          await c.mouseAway();
-          if (rate === 1 && i === 0 && !['accepted', 'unchanged', 'changedWrongly'].includes(outcome.result)) break;
+          outcome = (await c.waitSlip('recieve')) ? await c.applyOnce() : { result: 'no underline' };
+        } finally {
+          await c.send('Emulation.setCPUThrottlingRate', { rate: 1 });
         }
-      } finally {
-        await c.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+        trials[rate].push(outcome.result);
+        await c.mouseAway();
+        if (rate === 1 && i === 0 && !['accepted', 'unchanged', 'changedWrongly'].includes(outcome.result)) break;
       }
       if (trials[1].length < 20) break;
     }
@@ -472,10 +474,10 @@ const ROWS = [
     expect(idle, 'no badge');
     await c.type('x');
     let faded = 1;
-    for (let t = 0; t < 5; t++) {
+    await c.until(async () => {
       faded = Math.min(faded, (await c.js('__tr.hostBadge()')).badge?.opacity ?? 1);
-      await c.sleep(100);
-    }
+      return faded <= 0.3;
+    }, 1200);
     await c.sleep(2000);
     const back = (await c.js('__tr.hostBadge()')).badge?.opacity ?? 0;
     c.note({ idle: idle.opacity, faded, back });
@@ -558,7 +560,7 @@ function matrix(rows, columns, results) {
 function cellContext(h, { cdp, page, state, column, row, replies, shotDir }) {
   const notes = {};
   const target = column.textarea ? { textarea: true, field: row.field } : { textarea: false };
-  let loadedAt = 0;
+  let navigatedAt = 0;
   const c = {
     column, row, replies, notes,
     sleep: h.sleep,
@@ -571,9 +573,9 @@ function cellContext(h, { cdp, page, state, column, row, replies, shotDir }) {
     async load() {
       const variant = row.variant === 'default' ? '' : `?variant=${row.variant}`;
       const url = `${state.testPage}${column.page}${variant}`;
+      navigatedAt = Date.now();
       await page.send('Page.navigate', { url });
       await h.until(`${url} to load`, () => page.eval(`location.href === ${JSON.stringify(url)} && document.readyState === 'complete' && ${column.textarea ? 'true' : `document.documentElement.dataset.fixtureReady === 'true'`}`), 15000);
-      loadedAt = Date.now();
       await h.sleep(600);
       await page.eval(PAGE_LIB);
       await page.eval(`window.__tr.target = ${JSON.stringify(target)}`);
@@ -585,8 +587,11 @@ function cellContext(h, { cdp, page, state, column, row, replies, shotDir }) {
     async highlights() {
       return page.eval('__tr.highlights()');
     },
+    async typedSlip(word) {
+      return page.eval(`__tr.typedSlip(${JSON.stringify(word)})`);
+    },
     async waitSlip(word, timeoutMs = TIMEOUT_MS) {
-      const hit = await c.until(async () => (await c.highlights()).find((x) => x.inHost && x.connected && x.text === word && x.rect), timeoutMs);
+      const hit = await c.until(() => c.typedSlip(word), timeoutMs);
       if (!hit) notes[`ranges when "${word}" was missing`] = (await c.highlights()).map((x) => x.text);
       return hit;
     },
@@ -646,7 +651,7 @@ function cellContext(h, { cdp, page, state, column, row, replies, shotDir }) {
       return true;
     },
     async applyOnce() {
-      const slip = (await c.highlights()).find((x) => x.inHost && x.text === 'recieve');
+      const slip = await c.typedSlip('recieve');
       if (!slip) return { result: 'no underline' };
       const before = await page.eval('__tr.text()');
       if (!(await c.hover(slip.rect))) return { result: 'no card' };
@@ -658,7 +663,7 @@ function cellContext(h, { cdp, page, state, column, row, replies, shotDir }) {
       const result = after === expected ? 'accepted' : after === before ? 'unchanged' : 'changedWrongly';
       return { result };
     },
-    ltRequests(since = loadedAt) {
+    ltRequests(since = navigatedAt) {
       const log = path.join(state.evidenceDir, 'log.jsonl');
       return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
         .filter((e) => e.command === 'stub-lt answered' && Date.parse(e.at) >= since)
@@ -761,12 +766,14 @@ const BUDGET_TASK_MS = 50;
 
 async function longContent(c, h, { cdp, state }) {
   const script = `chrome-extension://${state.extId}/content-scripts/`;
-  const firstCheck = await traced(cdp, h, async () => {
+  await c.js('__tr.clickPoint()');
+  const firstCheck = contentScriptTasks(await traced(cdp, h, async () => {
     await c.focusEnd();
     await c.sleep(1000);
     await c.ltQuiet();
-  });
-  const attach = contentScriptMsPerTask(firstCheck, script);
+  }), script);
+  const attach = firstCheck.find((t) => t.dispatched.includes('focusin'));
+  const otherTasks = firstCheck.filter((t) => t !== attach).map((t) => t.ms);
   const flaggedAtStart = (await c.highlights()).filter((x) => x.inHost).length;
   const typing = {};
   for (const rate of [1, 4]) {
@@ -776,15 +783,14 @@ async function longContent(c, h, { cdp, state }) {
         await c.focusEnd();
         await c.type(' We will recieve the rest of the files tomorrow.');
       });
-      typing[rate] = contentScriptMsPerTask(events, script, 'keydown');
+      typing[rate] = contentScriptTasks(events, script).filter((t) => t.dispatched.includes('keydown')).map((t) => t.ms);
     } finally {
       await c.send('Emulation.setCPUThrottlingRate', { rate: 1 });
     }
   }
   const p95 = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] : 0);
-  const afterAttach = attach.slice(1);
   c.note({
-    firstCheck: { tasksWithTypeRightWork: attach.length, attachReadMs: round(attach[0] ?? 0), longestOtherTaskMs: round(Math.max(0, ...afterAttach)) },
+    firstCheck: { tasksWithTypeRightWork: firstCheck.length, attachReadMs: round(attach?.ms ?? 0), longestOtherTaskMs: round(Math.max(0, ...otherTasks)) },
     typing1x: { batches: typing[1].length, p95Ms: round(p95(typing[1])) },
     typing4x: { batches: typing[4].length, p95Ms: round(p95(typing[4])) },
     rangesOnHostAfterFirstCheck: flaggedAtStart,
@@ -793,7 +799,7 @@ async function longContent(c, h, { cdp, state }) {
   expect(typed && typing[1].length, 'Type Right is not working on the long Field (no work per keystroke, or no range on the typed Slip)');
   if (c.column.name === 'ProseMirror') expect(flaggedAtStart >= 720, `only ${flaggedAtStart} of the ~800 seeded Slips were underlined after the first check`);
   expect(p95(typing[1]) <= BUDGET_P95_MS, `p95 per mutation batch is ${round(p95(typing[1]))} ms at 1x (budget ${BUDGET_P95_MS} ms)`);
-  expect(Math.max(0, ...afterAttach) <= BUDGET_TASK_MS, `a task spent ${round(Math.max(...afterAttach))} ms in Type Right during the first check (budget ${BUDGET_TASK_MS} ms)`);
+  expect(Math.max(0, ...otherTasks) <= BUDGET_TASK_MS, `a task spent ${round(Math.max(...otherTasks))} ms in Type Right during the first check (budget ${BUDGET_TASK_MS} ms)`);
 }
 
 const round = (ms) => Math.round(ms * 100) / 100;
@@ -812,15 +818,15 @@ async function traced(cdp, h, fn) {
   return events;
 }
 
-function contentScriptMsPerTask(events, scriptPrefix, onlyTasksDispatching) {
+function contentScriptTasks(events, scriptPrefix) {
   const calls = events.filter((e) => e.name === 'FunctionCall' && e.ph === 'X' && e.args?.data?.url?.startsWith(scriptPrefix));
+  const dispatches = events.filter((e) => e.name === 'EventDispatch');
   const tasks = events.filter((e) => e.name === 'RunTask' && e.ph === 'X');
   const out = [];
   for (const task of tasks) {
     const inside = (e) => e.pid === task.pid && e.tid === task.tid && e.ts >= task.ts && e.ts + (e.dur ?? 0) <= task.ts + task.dur;
     const own = calls.filter(inside);
     if (!own.length) continue;
-    if (onlyTasksDispatching && !events.some((e) => e.name === 'EventDispatch' && e.args?.data?.type === onlyTasksDispatching && inside(e))) continue;
     let total = 0;
     let end = -1;
     for (const call of own.sort((a, b) => a.ts - b.ts)) {
@@ -828,9 +834,9 @@ function contentScriptMsPerTask(events, scriptPrefix, onlyTasksDispatching) {
       else if (call.ts + call.dur > end) total += call.ts + call.dur - end;
       end = Math.max(end, call.ts + call.dur);
     }
-    out.push({ ts: task.ts, ms: total / 1000 });
+    out.push({ ts: task.ts, ms: total / 1000, dispatched: dispatches.filter(inside).map((e) => e.args?.data?.type) });
   }
-  return out.sort((a, b) => a.ts - b.ts).map((x) => x.ms);
+  return out.sort((a, b) => a.ts - b.ts);
 }
 
 function decodePng(buf) {

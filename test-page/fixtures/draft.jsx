@@ -40,8 +40,8 @@ const seededRaw = {
   blocks: [
     rawBlock('intro', 'unstyled', 'Reminder for @team: the deadline for the survey is tomorrow. I ran `refresh_all.py` to refresh the totals.'),
     rawBlock('headers', 'unstyled', 'Do not edit the headers. Fill in every column and read the notes in the sheet before you send it back.'),
-    rawBlock('code', 'code-block', 'if (answers.recieve) {\n  save(answers);\n}'),
-    rawBlock('quote', 'blockquote', 'Our manager wrote: please recieve the files by noon and confirm.'),
+    rawBlock('code', 'code-block', 'if (answers.adress) {\n  save(answers);\n}'),
+    rawBlock('quote', 'blockquote', 'Our manager wrote: please send the files to the new adress by noon and confirm.'),
     rawBlock('gap', 'unstyled', ''),
     rawBlock('typing', 'unstyled', 'Our manager wrote "late submissions will not be accepted" in the last email. You can upload the file here: https://example.com/upload. Please be carefull'),
   ],
@@ -132,8 +132,8 @@ function seeds() {
     check('root is div.public-DraftEditor-content', root.matches('div.public-DraftEditor-content[role=textbox]') && root.getAttribute('data-testid') === TESTID, root.className),
     check('@team as styled text', handle?.style.color === 'rgb(29, 155, 240)' && !handle.closest('code'), handle?.outerHTML),
     check('backtick text inside code', Boolean(code), 'code'),
-    check('code block', pre?.textContent.includes('recieve'), 'pre'),
-    check('blockquote', quote?.textContent.includes('recieve'), 'blockquote'),
+    check('code block', pre?.textContent.includes('adress'), 'pre'),
+    check('blockquote', quote?.textContent.includes('adress'), 'blockquote'),
     check('typing block after the seeded regions', hasStubWord(block.textContent), block.textContent),
     check(
       'decoy: duplicate composer',

@@ -24,8 +24,8 @@ function seededDoc() {
     paragraph('Hello team, here is a short update on the migration. It occured on Tuesday night and everything is back to normal.'),
     paragraph('The checklist below shows what changed in the last release. Read it carefully and flag anything that looks wrong before the review on Thursday.'),
     paragraph(FILLER),
-    schema.node('code_block', null, schema.text('if (invoice.recieve) {\n  send(invoice);\n}')),
-    schema.node('blockquote', null, [paragraph('Budi wrote: please recieve the files by noon and confirm.')]),
+    schema.node('code_block', null, schema.text('if (invoice.adress) {\n  send(invoice);\n}')),
+    schema.node('blockquote', null, [paragraph('Budi wrote: please send the files to the new adress by noon and confirm.')]),
     paragraph('To refresh the numbers I ran ', inlineCodeText('refresh_all.py'), ' this morning, then checked the totals twice.'),
     paragraph('There is one seperate task left, so I will definately finish it before the weekend.'),
   ]);
@@ -72,8 +72,8 @@ function seeds() {
   const code = inlineCode(host)[0];
   return [
     textboxAttributes(host),
-    check('code block', pre?.textContent.includes('recieve'), 'pre'),
-    check('blockquote', quote?.textContent.includes('recieve'), 'blockquote'),
+    check('code block', pre?.textContent.includes('adress'), 'pre'),
+    check('blockquote', quote?.textContent.includes('adress'), 'blockquote'),
     check('inline code', code?.textContent === 'refresh_all.py', 'p > code'),
     check('typing block after the seeded regions', typingBlock().tagName === 'P' && hasStubWord(typingBlock().textContent), typingBlock().textContent),
     taller,

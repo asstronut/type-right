@@ -10,7 +10,7 @@ const { scroller, otherScroller, mount, slot } = buildPage(column);
 const escapeHtml = (value) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 const defaultQuote = [
-  'Hi, the invoice is attached. Please recieve it and confirm on this thread.',
+  'Hi, the invoice is attached. Please check the adress and confirm on this thread.',
   'If the total looks wrong, tell me before Friday.',
   FILLER,
   'Thanks, Budi',
@@ -69,7 +69,7 @@ function seeds() {
     check('signature', signaturePrefix()?.textContent === '-- ' && signature()?.textContent.includes('Sender Name'), 'span.gmail_signature_prefix + div.gmail_signature'),
     check(
       'quoted history',
-      quoted?.querySelector(':scope > div.gmail_attr + blockquote.gmail_quote')?.textContent.includes('recieve') && quoted.querySelector('div.gmail_attr')?.textContent.startsWith('On Mon, Oct 19, 2026'),
+      quoted?.querySelector(':scope > div.gmail_attr + blockquote.gmail_quote')?.textContent.includes(variant === 'long' ? 'recieve' : 'adress') && quoted.querySelector('div.gmail_attr')?.textContent.startsWith('On Mon, Oct 19, 2026'),
       'div.gmail_quote > div.gmail_attr + blockquote.gmail_quote',
     ),
     check(

@@ -59,7 +59,7 @@ Quill.register(MentionBlot);
 Quill.register(EmojiBlot);
 
 function seededContents() {
-  const codeLines = ['if (invoice.recieve) {', '  send(invoice);', '}'];
+  const codeLines = ['if (invoice.adress) {', '  send(invoice);', '}'];
   const contents = new Delta()
     .insert('Hi ')
     .insert({ mention: { id: 'U0DANA', label: '@Dana' } })
@@ -70,7 +70,7 @@ function seededContents() {
     .insert(`${FILLER}\n`);
   for (const line of codeLines) contents.insert(line).insert('\n', { 'code-block': true });
   return contents
-    .insert('Budi wrote: please recieve the files by noon and confirm.')
+    .insert('Budi wrote: please send the files to the new adress by noon and confirm.')
     .insert('\n', { blockquote: true })
     .insert('Priya said "the numbers look fine" yesterday, so we are almost done ')
     .insert({ emoji: { id: ':slightly_smiling_face:', alt: 'slightly smiling face emoji' } })
@@ -141,8 +141,8 @@ function seeds() {
       emoji?.src.startsWith('data:') && guards.length === 2 && guards.every((guard) => guard === '\ufeff'),
       `guards ${JSON.stringify(guards)}, children of ${emoji?.tagName}`,
     ),
-    check('code block', pre?.matches('pre.ql-syntax') && pre.textContent.includes('recieve'), 'pre.ql-syntax (Quill 1.3 has no .ql-code-block)'),
-    check('blockquote', quote?.textContent.includes('recieve'), 'blockquote'),
+    check('code block', pre?.matches('pre.ql-syntax') && pre.textContent.includes('adress'), 'pre.ql-syntax (Quill 1.3 has no .ql-code-block)'),
+    check('blockquote', quote?.textContent.includes('adress'), 'blockquote'),
     check('inline code', code?.textContent === 'refresh_all.py', 'p > code'),
     check('decoy: hidden ql-clipboard', clipboard()?.getAttribute('contenteditable') === 'true' && clipboard().getAttribute('aria-hidden') === 'true', 'div.ql-clipboard'),
     check('remaning after the emoji', typing.tagName === 'P' && typing.textContent.split('\ufeff').pop().includes('remaning'), typing.textContent),

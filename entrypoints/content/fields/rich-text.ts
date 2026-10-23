@@ -22,7 +22,7 @@ export interface RegionRules {
 
 export const REGION_RULES: RegionRules = {
   notChecked: ['pre', 'blockquote', '.ql-code-block'],
-  neverFlag: ['code', '[contenteditable="false"]', 'img.emoji', 'img[data-emoji]'],
+  neverFlag: ['code', 'ts-mention', '[data-type="mention"]', '[contenteditable="false"]', 'img.emoji', 'img[data-emoji]'],
 };
 
 interface Regions {
@@ -109,8 +109,7 @@ function labelOf(chip: Element, regions: Regions): Piece[] {
       }
     } else if (child instanceof Element) {
       const role = classify(child, regions);
-      if (role === 'chip' && child.localName === 'img') pieces.push(...labelOf(child, regions));
-      else if (role === 'block' || role === 'inline' || role === 'chip') pieces.push(...labelOf(child, regions));
+      if (role === 'block' || role === 'inline' || role === 'chip') pieces.push(...labelOf(child, regions));
     }
   }
   return pieces;

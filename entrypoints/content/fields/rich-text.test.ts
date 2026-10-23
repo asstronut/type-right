@@ -406,14 +406,14 @@ describe('regions that are not checked', () => {
 
 describe('content that is never flagged', () => {
   it('keeps a Slack mention chip in the text as its label', () => {
-    const read = readOf('<p>Thanks <ts-mention spellcheck="false" contenteditable="false" data-label="@Dana">@Dana</ts-mention> for the fix</p>');
+    const read = readOf('<p>Thanks <ts-mention spellcheck="false" data-label="@Dana">@Dana</ts-mention> for the fix</p>');
 
     expect(read.text).toBe('Thanks @Dana for the fix');
     expect(spansOf(read)).toEqual(['@Dana']);
   });
 
   it('keeps a TipTap mention chip in the text as its label', () => {
-    const read = readOf('<p>Hi <span data-type="mention" data-id="dana" contenteditable="false">Dana Lee</span>, welcome</p>');
+    const read = readOf('<p>Hi <span data-type="mention" data-id="dana">Dana Lee</span>, welcome</p>');
 
     expect(read.text).toBe('Hi Dana Lee, welcome');
     expect(spansOf(read)).toEqual(['Dana Lee']);

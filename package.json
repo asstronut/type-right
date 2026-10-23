@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "eval:llm": "vite-node eval/llm/run.ts",
     "postinstall": "wxt prepare",
-    "serve:testpage": "node scripts/serve-test-page.mjs"
+    "serve:testpage": "node scripts/serve-test-page.mjs",
+    "build:fixtures": "node test-page/fixtures/build.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

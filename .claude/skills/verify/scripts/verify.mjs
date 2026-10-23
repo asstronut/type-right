@@ -349,8 +349,9 @@ async function launch() {
     die(`An instance is already recorded in ${STATE_FILE}. Run \`doctor\` to check it, or \`cleanup\` first.`);
   }
   const edgePath = findBrowser();
-  console.log('Building (npm run build)...');
+  console.log('Building (npm run build, npm run build:fixtures)...');
   execSync('npm run build', { stdio: ['ignore', 'ignore', 'inherit'], cwd: ROOT });
+  execSync('npm run build:fixtures', { stdio: ['ignore', 'ignore', 'inherit'], cwd: ROOT });
 
   fs.mkdirSync(RUN_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -445,6 +446,15 @@ async function cleanup() {
   console.log(`Cleaned up. Evidence kept in ${path.relative(ROOT, state.evidenceDir)}`);
 }
 
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+};
+
 function serve(portFile) {
   const server = createServer((req, res) => {
     const name = req.url === '/' ? 'index.html' : decodeURIComponent(req.url.slice(1).split('?')[0]);
@@ -453,7 +463,7 @@ function serve(portFile) {
       res.writeHead(404);
       return res.end('Not found');
     }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': CONTENT_TYPES[path.extname(file)] ?? 'application/octet-stream' });
     res.end(fs.readFileSync(file));
   });
   server.listen(0, '127.0.0.1', () => fs.writeFileSync(portFile, String(server.address().port)));

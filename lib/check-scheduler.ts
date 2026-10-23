@@ -8,6 +8,8 @@ export interface CheckScheduler {
   schedule(delayMs?: number): void;
   /** Holds runs back for `ms`, then runs again. */
   blockFor(ms: number): void;
+  /** Drops the pending run, keeping any block; `schedule` starts it again. */
+  cancel(): void;
   /** Ends a block early and runs at once; does nothing when not blocked. */
   unblock(): void;
   dispose(): void;
@@ -52,6 +54,10 @@ export function createCheckScheduler(options: CheckSchedulerOptions): CheckSched
 
   return {
     schedule,
+    cancel() {
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+    },
     blockFor(ms) {
       blockedUntil = Date.now() + ms;
       schedule(0);

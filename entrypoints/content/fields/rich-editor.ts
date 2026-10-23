@@ -26,7 +26,13 @@ export function richEditorAdapter(host: HTMLElement): FieldAdapter {
     element: host,
 
     watch(onRead, signal) {
-      const deliver = () => onRead({ ...reader.read(), composing: false });
+      let composing = false;
+      const deliver = () => onRead({ ...reader.read(), composing });
+      host.addEventListener('compositionstart', () => (composing = true), { signal });
+      host.addEventListener('compositionend', () => {
+        composing = false;
+        deliver();
+      }, { signal });
       deliver();
       // Every batch is read again even when the text is the same: editors re-render nodes with identical text, which strands the ranges on the old nodes.
       const observer = new MutationObserver(deliver);

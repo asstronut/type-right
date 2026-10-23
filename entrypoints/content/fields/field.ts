@@ -113,14 +113,13 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   /** Waits out the verdict delay; resolves whether the user typed or composed meanwhile. */
   async function untilVerdict(): Promise<boolean> {
     const watching = { happened: false };
+    const waiting = new AbortController();
     const note = () => void (watching.happened = true);
-    const noteTrusted = (event: Event) => event.isTrusted && note();
     interference = watching;
-    element.addEventListener('input', noteTrusted);
-    element.addEventListener('compositionstart', note);
+    element.addEventListener('input', (event) => event.isTrusted && note(), { signal: waiting.signal });
+    element.addEventListener('compositionstart', note, { signal: waiting.signal });
     await new Promise((resolve) => setTimeout(resolve, APPLY_VERDICT_MS));
-    element.removeEventListener('input', noteTrusted);
-    element.removeEventListener('compositionstart', note);
+    waiting.abort();
     interference = undefined;
     return watching.happened;
   }

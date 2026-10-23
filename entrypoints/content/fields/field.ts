@@ -106,7 +106,6 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   }
   element.addEventListener('mousemove', probe, { passive: true, signal });
   element.addEventListener('mouseleave', leave, { signal });
-  // The last line's underline can hang below the element's box (a Rich editor has no bottom padding), where the element gets no mousemove.
   let underBox = false;
   document.addEventListener('mousemove', (event) => {
     const wasUnderBox = underBox;
@@ -140,7 +139,6 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
 
   adapter.watch((read) => {
     if (deps.noticeReload()) return;
-    // A re-render of the same text keeps the card: the pointer is still on the same words.
     if (read.text !== latest?.text) hover.closeFor(target);
     latest = read;
     render(checker.update(read.text));

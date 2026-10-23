@@ -10,7 +10,6 @@ export const KIND_COLORS: Record<SlipKind, string> = {
 /** The line sits below the glyphs, so a pointer on it is up to this far under the highlighted range. */
 const PROBE_OFFSETS_PX = [0, 3, 6];
 
-/** How far below the highlighted text a pointer can be and still be on its underline. */
 export const UNDERLINE_REACH_PX = Math.max(...PROBE_OFFSETS_PX);
 
 export interface DrawnSlip {

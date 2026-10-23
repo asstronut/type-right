@@ -23,7 +23,6 @@ function addEditable(html: string, contenteditable = 'true'): HTMLElement {
   return element;
 }
 
-/** Lets the editor's MutationObserver deliver the batch of changes made so far. */
 const nextBatch = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {

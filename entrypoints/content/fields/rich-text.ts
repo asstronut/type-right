@@ -1,15 +1,11 @@
 import type { FieldRead } from './field';
 import type { TextSpan } from '../../../lib/slip-tracker';
 
-/** A run of one text node's characters that appears unchanged in the Field's text. */
 interface Segment {
   node: Text;
-  /** Where the run starts in the node's data. */
   nodeStart: number;
-  /** The run's span in the Field's text. */
   start: number;
   end: number;
-  /** The node's whole data when it was read, to tell whether the node has changed since. */
   data: string;
 }
 
@@ -17,11 +13,6 @@ export interface RichTextReader {
   read(): Omit<FieldRead, 'composing'>;
 }
 
-/**
- * Reads a Rich editor's text the way the same lines would read in a textarea:
- * blocks and `<br>`s become line breaks, and what isn't typed prose (zero-width
- * characters, hidden nodes, placeholders) is left out.
- */
 export function createRichTextReader(host: HTMLElement): RichTextReader {
   return {
     read() {
@@ -31,7 +22,6 @@ export function createRichTextReader(host: HTMLElement): RichTextReader {
   };
 }
 
-/** One text node's characters that are in the text, and so go on one line. */
 interface Piece {
   node: Text;
   nodeStart: number;
@@ -62,7 +52,6 @@ const SKIPPED_TAGS = new Set([
   'select', 'textarea',
 ]);
 
-/** No computed style: it forces layout, and a read runs on every edit. */
 function classify(element: Element): Role {
   if (
     SKIPPED_TAGS.has(element.localName) ||
@@ -79,7 +68,6 @@ function classify(element: Element): Role {
 
 const TYPED_CHARACTERS = /[^\u200b\ufeff\u2060]+/g;
 
-/** The characters of `node` that are in the text; each run between removed zero-width characters is a piece. */
 function piecesOf(node: Text): Piece[] {
   return [...node.data.matchAll(TYPED_CHARACTERS)].map((match) => ({
     node,
@@ -90,11 +78,9 @@ function piecesOf(node: Text): Piece[] {
 
 const textOf = (line: Line): string => line.map((piece) => piece.text).join('');
 
-/** The lines of a block: its inline runs and child blocks in order, an empty line if it has none. */
 function linesOf(block: Element): Line[] {
   const items = itemsOf(block);
   const hasChildBlocks = items.some((item) => item.kind === 'block');
-  // Whitespace that only formats the markup between blocks is not a line.
   const lines = items.flatMap((item) => (item.kind === 'run' && item.isGap && hasChildBlocks ? [] : item.lines));
   return lines.length ? lines : [[]];
 }
@@ -154,12 +140,10 @@ function breakLine(run: Run): void {
 }
 
 function finishRun(run: Run): Item {
-  // A `<br>` that ends a run only closes its line: trailing and placeholder breaks add nothing.
   if (run.endsWithBreak && run.lines.length > 1) run.lines.pop();
   return { kind: 'run', lines: run.lines, isGap: !run.hasBreak && /^\s*$/.test(textOf(run.current)) };
 }
 
-/** Joins the lines into the text, and records where each piece landed. */
 function layOut(lines: Line[]): { text: string; segments: Segment[] } {
   const segments: Segment[] = [];
   let text = '';
@@ -176,16 +160,9 @@ function layOut(lines: Line[]): { text: string; segments: Segment[] } {
 interface Point {
   node: Node;
   offset: number;
-  /** The segment the point is in, if it is in one. */
   segment?: Segment;
 }
 
-/**
- * The point in the DOM for a text offset. An offset on a segment's edge goes
- * where the span needs it: a start begins in the segment that starts there, an
- * end stays in the segment that ends there. An offset between segments, where
- * a line break is, goes to the end of the segment before it.
- */
 function pointAt(host: HTMLElement, segments: Segment[], offset: number, side: 'start' | 'end'): Point {
   const limit = side === 'start' ? offset + 1 : offset;
   let low = 0;
@@ -216,7 +193,6 @@ function rangeOver(host: HTMLElement, segments: Segment[], span: TextSpan): Stat
   });
 }
 
-/** Whether the point's text node is still in the editor with the data it was read with, so its offset still means the same characters. */
 function isUnchanged(host: HTMLElement, { segment }: Point): boolean {
   return !segment || (host.contains(segment.node) && segment.node.data === segment.data);
 }

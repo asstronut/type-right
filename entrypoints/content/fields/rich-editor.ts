@@ -2,7 +2,6 @@ import type { FieldAdapter } from './field';
 import { isHidden } from './hidden';
 import { createRichTextReader } from './rich-text';
 
-/** The editing host a focus or edit in `target` belongs to: the outermost editable element, as one nested in it is part of it. */
 export function editingHostOf(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element) || target instanceof HTMLTextAreaElement) return null;
   let host: HTMLElement | null = null;
@@ -12,7 +11,6 @@ export function editingHostOf(target: EventTarget | null): HTMLElement | null {
   return host;
 }
 
-/** Whether an editing host is a place to write prose: not a single-line box, not out of sight, not a code editor. */
 export function canBeRichField(host: HTMLElement): boolean {
   const role = host.getAttribute('role');
   if (role === 'combobox' || role === 'searchbox') return false;

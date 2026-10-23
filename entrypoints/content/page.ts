@@ -131,7 +131,6 @@ export function runPage(options: PageOptions): void {
       fields.set(textarea, createField(textareaAdapter(textarea), deps));
     }
 
-    /** A host that can't be a Field now is not remembered: it is judged again on its next focus. */
     function attachRichEditor(host: HTMLElement | null): void {
       if (!host || fields.has(host) || !canBeRichField(host)) return;
       fields.set(host, createField(richEditorAdapter(host), deps));

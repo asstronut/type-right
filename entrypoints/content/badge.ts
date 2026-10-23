@@ -98,11 +98,6 @@ export function createBadge(element: HTMLElement): Badge {
 
 const CLIPPING = new Set(['hidden', 'clip', 'scroll', 'auto']);
 
-/**
- * The part of `element` the user can see: its box cut by the ancestors that
- * clip its overflow, and by the viewport. The body's and root's overflow
- * belongs to the viewport, and nothing above a fixed box clips it.
- */
 function visibleBox(element: HTMLElement): DOMRect | undefined {
   let { left, top, right, bottom } = element.getBoundingClientRect();
   if (right <= left || bottom <= top) return undefined;

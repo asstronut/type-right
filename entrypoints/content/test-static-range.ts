@@ -18,12 +18,10 @@ class StubStaticRange implements StaticRange {
   }
 }
 
-/** Gives a test environment without `StaticRange` (happy-dom) one that keeps its endpoints. `vi.unstubAllGlobals()` takes it away again. */
 export function installStaticRange(): void {
   vi.stubGlobal('StaticRange', StubStaticRange);
 }
 
-/** The text a range covers in the page, as the browser would highlight it. */
 export function textUnder(range: AbstractRange): string {
   const live = document.createRange();
   live.setStart(range.startContainer, range.startOffset);

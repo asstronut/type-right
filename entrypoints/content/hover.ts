@@ -74,7 +74,7 @@ export class HoverController {
     };
   }
 
-  /** The Field of `target` changed under its Slips (typing, a new check): its card is closed, and its card only. */
+  /** The Field of `target` changed under its Slips (a new read, or the Field going away): its card is closed, and its card only. */
   changed(target: HoverTarget): void {
     if (this.pending?.target === target) this.cancelPending();
     if (this.shown?.target === target) this.hide();

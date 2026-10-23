@@ -34,7 +34,7 @@ async function checkSpelling(text: string): Promise<Slip[]> {
 function createFakeAdapter() {
   const element = document.body.appendChild(document.createElement('div'));
   let onRead: ((read: FieldRead) => void) | undefined;
-  const replace = vi.fn(async (_slip: Slip, _suggestion: string) => undefined);
+  const replace = vi.fn(async (_slip: Slip, _flagged: string, _suggestion: string) => undefined);
   const adapter: FieldAdapter = {
     element,
     watch: (callback) => void (onRead = callback),
@@ -257,7 +257,7 @@ describe('the Hover card', () => {
     expect(page.hover.changed).toHaveBeenCalledWith(target);
   });
 
-  it('applies a fix only to the words the card was opened on', async () => {
+  it('hands the adapter the words the card was opened on, so it can refuse a fix once they changed', async () => {
     const page = setup();
     page.deliver(TEXT);
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
@@ -268,12 +268,7 @@ describe('the Hover card', () => {
     expect(flagged).toBe('recieve');
 
     target.apply(slip, flagged, 'receive');
-    expect(page.replace).toHaveBeenCalledWith(slip, 'receive');
-
-    page.replace.mockClear();
-    page.deliver(`Oh no. ${TEXT}`);
-    target.apply(slip, flagged, 'receive');
-    expect(page.replace).not.toHaveBeenCalled();
+    expect(page.replace).toHaveBeenCalledWith(slip, 'recieve', 'receive');
   });
 
   it('adds a word to the Dictionary', async () => {

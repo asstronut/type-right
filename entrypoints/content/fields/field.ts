@@ -21,7 +21,8 @@ export interface FieldAdapter {
   /** Delivers a read at attach (when the kind's rules allow it) and after every change, until `signal` aborts. */
   watch(onRead: (read: FieldRead) => void, signal: AbortSignal): void;
   canApply(slip: Slip): boolean;
-  replace(slip: Slip, suggestion: string): Promise<void>;
+  /** Replaces the Slip's text with `suggestion`, unless the element's live text there no longer reads `flagged`. */
+  replace(slip: Slip, flagged: string, suggestion: string): Promise<void>;
 }
 
 export interface FieldDeps {
@@ -68,21 +69,15 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
 
   function render(slips: Slip[]): void {
     if (!latest) return;
-    const { text, rangeFor } = latest;
-    underlines.draw(
-      field,
-      slips
-        .filter((slip) => slip.end > slip.start && slip.end <= text.length)
-        .map((slip) => ({ slip, range: rangeFor(slip) })),
-    );
+    const { rangeFor } = latest;
+    underlines.draw(field, slips.map((slip) => ({ slip, range: rangeFor(slip) })));
   }
 
   const target: HoverTarget = {
     textOf: (slip) => latest?.text.slice(slip.start, slip.end) ?? '',
     canApply: (slip) => adapter.canApply(slip),
     apply(slip, flagged, suggestion) {
-      if (latest?.text.slice(slip.start, slip.end) !== flagged) return;
-      void adapter.replace(slip, suggestion);
+      void adapter.replace(slip, flagged, suggestion);
     },
     ignore(slip) {
       checker.ignore(slip.id);

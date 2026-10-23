@@ -3,15 +3,13 @@ import { isHidden } from './hidden';
 
 export function textareaAdapter(textarea: HTMLTextAreaElement): FieldAdapter {
   function read(composing: boolean): FieldRead {
+    const text = textarea.value;
     return {
-      text: textarea.value,
+      text,
       neverFlag: [],
       composing,
-      // A site may clear the textarea by script without an `input` event, so a read can outlive its text.
-      rangeFor: (span) => {
-        const length = textarea.value.length;
-        return textarea.createValueRange(Math.min(span.start, length), Math.min(span.end, length));
-      },
+      // A site may set the value by script without an `input` event; offsets into the old text would underline the wrong words.
+      rangeFor: (span) => (textarea.value === text ? textarea.createValueRange(span.start, span.end) : textarea.createValueRange(0, 0)),
     };
   }
 
@@ -30,7 +28,8 @@ export function textareaAdapter(textarea: HTMLTextAreaElement): FieldAdapter {
      * stack, so Ctrl+Z restores the original and the site gets real
      * beforeinput/input events (and keeps the fix on preview or submit).
      */
-    async replace(slip, suggestion) {
+    async replace(slip, flagged, suggestion) {
+      if (textarea.value.slice(slip.start, slip.end) !== flagged) return;
       textarea.focus();
       textarea.setSelectionRange(slip.start, slip.end);
       if (document.execCommand('insertText', false, suggestion)) return;

@@ -86,9 +86,9 @@ export function createUnderlines(): Underlines {
     },
 
     hitAt(owner, x, y) {
-      const ours = Object.values(register());
       const ranges = drawn.get(owner);
-      if (!ranges) return undefined;
+      if (!ranges?.size) return undefined;
+      const ours = Object.values(register());
       for (const offset of PROBE_OFFSETS_PX) {
         const probeY = y - offset;
         for (const { highlight, ranges: covering } of CSS.highlights.highlightsFromPoint(x, probeY)) {

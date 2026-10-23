@@ -62,8 +62,8 @@ export function createBadge(element: HTMLElement): Badge {
 
   function place(): void {
     if (!badge.textContent) return;
-    const rect = element.getBoundingClientRect();
-    if (!element.isConnected || !rect.width || !rect.height) {
+    const rect = visibleBox(element);
+    if (!element.isConnected || !rect) {
       badge.style.display = 'none';
       return;
     }
@@ -94,4 +94,25 @@ export function createBadge(element: HTMLElement): Badge {
       badge.remove();
     },
   };
+}
+
+const CLIPPING = new Set(['hidden', 'clip', 'scroll', 'auto']);
+
+/** The part of `element` the user can see: its box cut by every ancestor that clips its overflow, and by the viewport. */
+function visibleBox(element: HTMLElement): DOMRect | undefined {
+  let { left, top, right, bottom } = element.getBoundingClientRect();
+  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    const { overflowX, overflowY } = getComputedStyle(ancestor);
+    if (!CLIPPING.has(overflowX) && !CLIPPING.has(overflowY)) continue;
+    const clip = ancestor.getBoundingClientRect();
+    left = Math.max(left, clip.left);
+    top = Math.max(top, clip.top);
+    right = Math.min(right, clip.right);
+    bottom = Math.min(bottom, clip.bottom);
+  }
+  left = Math.max(left, 0);
+  top = Math.max(top, 0);
+  right = Math.min(right, window.innerWidth);
+  bottom = Math.min(bottom, window.innerHeight);
+  return right > left && bottom > top ? new DOMRect(left, top, right - left, bottom - top) : undefined;
 }

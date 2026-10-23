@@ -25,6 +25,7 @@ const KINDS = {
 
 /** The Providers' endpoints, which `stub-llm` answers in place of the real ones. */
 const LLM_URL_PATTERNS = ['https://api.z.ai/*', 'https://generativelanguage.googleapis.com/*'];
+const LT_URL_PATTERN = 'https://api.languagetool.org/v2/check*';
 
 function usage() {
   console.log(`usage: node .claude/skills/verify/scripts/verify.mjs <command>
@@ -48,6 +49,10 @@ function usage() {
   eval <js>                      evaluate in the tab's page (inspection only)
   sw-eval <js>                   evaluate in the extension's service worker (inspection only)
   stub-llm <replies.json>        answer LLM requests from a file instead of the Provider, until cleanup
+  stub-lt <replies.json>         answer LanguageTool requests from a file instead of the public API, until cleanup
+  rich-editors [--column <names>] [--row <names>]
+                                 drive the Rich editor fixtures through the row x column matrix (stub-lt on);
+                                 names are comma-separated; exits 1 if a cell fails
   cleanup                        close Edge and the test page server; evidence is kept
 
 Tab-scoped commands take --tab <url substring>; the default is the test page.`);
@@ -272,7 +277,7 @@ async function readCard(page) {
   });
   const suggestions = [];
   walk(card, (n) => { if (attr(n, 'class') === 'suggestion') suggestions.push(textOf(n)); });
-  return { kind: text('kind'), type: text('type'), explanation: text('explanation'), suggestions, buttons };
+  return { kind: text('kind'), type: text('type'), explanation: text('explanation'), suggestions, buttons, nodeId: card.nodeId };
 }
 
 function walk(node, fn) {
@@ -301,7 +306,9 @@ function textOf(node) {
 }
 
 function cardView(card) {
-  return card && { ...card, buttons: card.buttons.map((b) => b.label) };
+  if (!card) return card;
+  const { nodeId, ...shown } = card;
+  return { ...shown, buttons: card.buttons.map((b) => b.label) };
 }
 
 async function centerOf(page, nodeId) {
@@ -438,7 +445,7 @@ async function cleanup() {
     }
   });
   if (alive(state.serverPid)) process.kill(state.serverPid);
-  if (state.stubPid && alive(state.stubPid)) process.kill(state.stubPid);
+  for (const pid of Object.values(state.stubs ?? {})) if (alive(pid)) process.kill(pid);
   await sleep(500);
   fs.rmSync(state.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   fs.rmSync(RUN_DIR, { recursive: true, force: true });
@@ -457,9 +464,9 @@ const CONTENT_TYPES = {
 
 function serve(portFile) {
   const server = createServer((req, res) => {
-    const name = req.url === '/' ? 'index.html' : decodeURIComponent(req.url.slice(1).split('?')[0]);
+    const name = decodeURIComponent(req.url.slice(1).split('?')[0]) || 'index.html';
     const file = path.join(TEST_PAGE_DIR, name);
-    if (!file.startsWith(TEST_PAGE_DIR) || !fs.existsSync(file)) {
+    if (!file.startsWith(TEST_PAGE_DIR) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404);
       return res.end('Not found');
     }
@@ -469,12 +476,59 @@ function serve(portFile) {
   server.listen(0, '127.0.0.1', () => fs.writeFileSync(portFile, String(server.address().port)));
 }
 
-/**
- * Answers the service worker's LLM requests from `repliesFile` ({ sentence: entries shaped as
- * the prompt asks for them }; any other sentence gets none), so the LLM leg runs without a real
- * key. Re-attaches whenever MV3 restarts the worker.
- */
-async function stubServe(repliesFile) {
+const STUBS = {
+  'stub-llm': {
+    patterns: LLM_URL_PATTERNS,
+    answer(replies, request) {
+      const body = JSON.parse(request.postData ?? '{}');
+      const sentence = body.messages?.findLast((m) => m.role === 'user')?.content ?? '';
+      const prompt = body.messages?.find((m) => m.role === 'system')?.content ?? '';
+      const content = JSON.stringify({ errors: replies[sentence] ?? [] });
+      return {
+        reply: { choices: [{ message: { role: 'assistant', content } }] },
+        logged: { url: request.url, sentence, promptAsksForTranslation: prompt.includes('"translation"'), content },
+      };
+    },
+  },
+  'stub-lt': {
+    patterns: [LT_URL_PATTERN],
+    answer(replies, request) {
+      const text = new URLSearchParams(request.postData ?? '').get('text') ?? '';
+      const matches = ltMatches(text, replies);
+      return {
+        reply: { matches },
+        logged: { text: text.length > 2000 ? `${text.slice(0, 2000)}…` : text, chars: text.length, matches: matches.map((m) => text.slice(m.offset, m.offset + m.length)) },
+      };
+    },
+  },
+};
+
+const ISSUE_TYPES = { spelling: 'misspelling', grammar: 'grammar', wording: 'style', translation: 'style' };
+
+function ltMatches(text, replies) {
+  const wordChar = /[\p{L}\p{N}_]/u;
+  const matches = [];
+  for (const [phrase, slip] of Object.entries(replies)) {
+    for (let at = text.indexOf(phrase); at !== -1; at = text.indexOf(phrase, at + 1)) {
+      const before = text[at - 1];
+      const after = text[at + phrase.length];
+      if (wordChar.test(phrase[0]) && before && wordChar.test(before)) continue;
+      if (wordChar.test(phrase.at(-1)) && after && wordChar.test(after)) continue;
+      matches.push({
+        message: slip.explanation,
+        shortMessage: slip.type,
+        offset: at,
+        length: phrase.length,
+        replacements: slip.suggestions.map((value) => ({ value })),
+        rule: { issueType: ISSUE_TYPES[slip.kind], category: { id: slip.kind.toUpperCase(), name: slip.type } },
+      });
+    }
+  }
+  return matches.sort((a, b) => a.offset - b.offset);
+}
+
+async function stubServe(name, repliesFile) {
+  const stub = STUBS[name] ?? die(`Unknown stub ${name}`);
   const state = readState();
   const replies = JSON.parse(fs.readFileSync(repliesFile, 'utf8'));
   const cdp = await browser(state);
@@ -483,17 +537,13 @@ async function stubServe(repliesFile) {
     if (sessionId === attached) attached = undefined;
   });
   cdp.on('Fetch.requestPaused', async ({ requestId, request }, sessionId) => {
-    const body = JSON.parse(request.postData ?? '{}');
-    const sentence = body.messages?.findLast((m) => m.role === 'user')?.content ?? '';
-    const prompt = body.messages?.find((m) => m.role === 'system')?.content ?? '';
-    const content = JSON.stringify({ errors: replies[sentence] ?? [] });
-    const completion = JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] });
-    record(state, { command: 'stub-llm answered', result: { url: request.url, sentence, promptAsksForTranslation: prompt.includes('"translation"'), content } });
+    const { reply, logged } = stub.answer(replies, request);
+    record(state, { command: `${name} answered`, result: logged });
     await cdp.send('Fetch.fulfillRequest', {
       requestId,
       responseCode: 200,
       responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-      body: Buffer.from(completion).toString('base64'),
+      body: Buffer.from(JSON.stringify(reply)).toString('base64'),
     }, sessionId).catch(() => {});
   });
   for (;;) {
@@ -501,12 +551,42 @@ async function stubServe(repliesFile) {
       const info = (await targets(cdp).catch(() => [])).find((t) => t.type === 'service_worker' && t.url.startsWith(`chrome-extension://${state.extId}/`));
       if (info) {
         const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: info.targetId, flatten: true });
-        await cdp.send('Fetch.enable', { patterns: LLM_URL_PATTERNS.map((urlPattern) => ({ urlPattern, requestStage: 'Request' })) }, sessionId);
+        await cdp.send('Fetch.enable', { patterns: stub.patterns.map((urlPattern) => ({ urlPattern, requestStage: 'Request' })) }, sessionId);
         attached = sessionId;
+        fs.writeFileSync(path.join(RUN_DIR, `${name}.ready`), new Date().toISOString());
       }
     }
     await sleep(200);
   }
+}
+
+async function startStub(state, name, file) {
+  if (state.stubs?.[name] && alive(state.stubs[name])) die(`${name} is already running; cleanup stops it.`);
+  JSON.parse(fs.readFileSync(file, 'utf8'));
+  const ready = path.join(RUN_DIR, `${name}.ready`);
+  fs.rmSync(ready, { force: true });
+  const stub = spawn(process.execPath, [SCRIPT, 'stub-serve', name, file], { detached: true, stdio: 'ignore', windowsHide: true, cwd: ROOT });
+  stub.unref();
+  state.stubs = { ...state.stubs, [name]: stub.pid };
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  // A worker MV3 has stopped starts again on the content script's first message, which a reload sends.
+  const cdp = await browser(state);
+  try {
+    await (await tab(cdp, state, state.testPage)).send('Page.reload');
+  } finally {
+    cdp.close();
+  }
+  await until(`${name} to attach to the service worker`, async () => fs.existsSync(ready), 15000).catch((error) => {
+    stopStub(state, name);
+    throw error;
+  });
+}
+
+function stopStub(state, name) {
+  const pid = state.stubs?.[name];
+  if (pid && alive(pid)) process.kill(pid);
+  delete state.stubs?.[name];
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
 // ---------- doctor ----------
@@ -537,6 +617,8 @@ async function doctor() {
 
   const page = await fetch(state.testPage).then((r) => r.text()).catch(() => '');
   check('test page served', page.includes('Type Right'), state.testPage);
+  const fixture = await fetch(`${state.testPage}rich/prosemirror.js`).then((r) => r.ok).catch(() => false);
+  check('Rich editor fixtures built and served', fixture, `${state.testPage}rich/`);
 
   let cdp;
   try {
@@ -581,17 +663,37 @@ const commands = {
   cleanup,
   doctor,
   serve: () => serve(argv[0]),
-  'stub-serve': () => stubServe(argv[0]),
+  'stub-serve': () => stubServe(argv[0], argv[1]),
 
-  'stub-llm': () => {
+  'stub-llm': async () => {
     const state = readState();
     const file = path.resolve(argv[0] ?? die('stub-llm <replies.json>'));
-    if (state.stubPid && alive(state.stubPid)) die('stub-llm is already running; cleanup stops it.');
-    JSON.parse(fs.readFileSync(file, 'utf8'));
-    const stub = spawn(process.execPath, [SCRIPT, 'stub-serve', file], { detached: true, stdio: 'ignore', windowsHide: true, cwd: ROOT });
-    stub.unref();
-    fs.writeFileSync(STATE_FILE, JSON.stringify({ ...state, stubPid: stub.pid }, null, 2));
-    out(state, `stub-llm ${file}`, { stubbing: LLM_URL_PATTERNS });
+    await startStub(state, 'stub-llm', file);
+    out(state, `stub-llm ${file}`, { stubbing: STUBS['stub-llm'].patterns });
+  },
+
+  'stub-lt': async () => {
+    const state = readState();
+    const file = path.resolve(argv[0] ?? die('stub-lt <replies.json>'));
+    await startStub(state, 'stub-lt', file);
+    out(state, `stub-lt ${file}`, { stubbing: STUBS['stub-lt'].patterns });
+  },
+
+  'rich-editors': async () => {
+    const list = (name) => flag(name)?.split(',').map((s) => s.trim()).filter(Boolean);
+    const columns = list('column');
+    const rows = list('row');
+    const { richEditors, LT_REPLIES } = await import('./rich-editors.mjs');
+    const state = readState();
+    const ownStub = !(state.stubs?.['stub-lt'] && alive(state.stubs['stub-lt']));
+    if (ownStub) await startStub(state, 'stub-lt', path.join(ROOT, LT_REPLIES));
+    let ok;
+    try {
+      ok = await richEditors({ ROOT, readState, browser, tab, record, sleep, until, die: (message) => { throw new Error(message); }, mouseMove, mouseClick, key, typeText, readCard, centerOf }, { columns, rows });
+    } finally {
+      if (ownStub) stopStub(readState(), 'stub-lt');
+    }
+    if (!ok) process.exit(1);
   },
   help: usage,
 

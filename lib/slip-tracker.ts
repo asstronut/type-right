@@ -34,8 +34,14 @@ export interface SlipTracker {
    * Spelling Slips on Dictionary words are dropped before that merge, so they
    * never hide another Slip; Ignore here Slips are dropped after it, so an
    * ignored LLM Slip takes the LanguageTool Slips it replaced with it.
+   * Slips touching a never-flag span are dropped at the same point as Dictionary words.
    */
   slips(isDictionaryWord?: (word: string) => boolean): Slip[];
+  /**
+   * Replaces the spans of the text that never get a Slip. They are the Field's
+   * current ones, so they are not followed through edits.
+   */
+  setNeverFlag(spans: readonly TextSpan[]): void;
   /** Hides the Slips with this id (Ignore here) for as long as the tracker lives, re-found ones included. */
   ignore(id: string): void;
   /** The span of the text edited since it was last checked, or null when it is all checked. */
@@ -51,6 +57,7 @@ export function createSlipTracker(): SlipTracker {
   const found: Record<SlipSource, Slip[]> = { languagetool: [], llm: [] };
   let dirty: TextSpan | null = null;
   const ignored = new Set<string>();
+  let neverFlag: readonly TextSpan[] = [];
 
   function applyEdit(next: string): boolean {
     if (next === text) return false;
@@ -77,12 +84,14 @@ export function createSlipTracker(): SlipTracker {
   }
 
   function slips(isDictionaryWord?: (word: string) => boolean): Slip[] {
-    const withoutDictionaryWords = (list: Slip[]) =>
-      isDictionaryWord
-        ? list.filter((slip) => !(slip.kind === 'spelling' && isDictionaryWord(text.slice(slip.start, slip.end))))
-        : list;
-    const lt = withoutDictionaryWords(found.languagetool);
-    const llm = withoutDictionaryWords(found.llm);
+    const flaggable = (list: Slip[]) =>
+      list.filter(
+        (slip) =>
+          !neverFlag.some((span) => slip.start < span.end && span.start < slip.end) &&
+          !(slip.kind === 'spelling' && isDictionaryWord?.(text.slice(slip.start, slip.end))),
+      );
+    const lt = flaggable(found.languagetool);
+    const llm = flaggable(found.llm);
     const unmatched = lt.filter((l) => !llm.some((m) => l.start < m.end && m.start < l.end));
     return [...unmatched, ...llm].filter((slip) => !ignored.has(slip.id)).sort((a, b) => a.start - b.start);
   }
@@ -98,6 +107,9 @@ export function createSlipTracker(): SlipTracker {
       return had;
     },
     slips,
+    setNeverFlag: (spans) => {
+      neverFlag = spans;
+    },
     ignore: (id) => {
       ignored.add(id);
     },

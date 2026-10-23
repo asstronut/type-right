@@ -50,8 +50,11 @@ export interface FieldChecker {
    * Tells the checker the field's full text changed. Returns the Slips that are
    * still valid for the new text (shifted or dropped to match the edit) right
    * away, and schedules a debounced re-check of only the edited paragraph.
+   * `neverFlag` is the spans of `text` that never get a Slip: any Slip
+   * touching one is dropped, so it is never drawn or tallied. Pass the spans
+   * of this text on every call; they are not followed through edits.
    */
-  update(text: string): Slip[];
+  update(text: string, options?: { neverFlag?: readonly TextSpan[] }): Slip[];
   /**
    * The field's current Slips, without re-checking. Call it after Settings
    * change (e.g. the dictionary) to re-render with them applied.
@@ -133,7 +136,8 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     if (health.state === 'active') llmScheduler?.unblock();
   });
 
-  function update(next: string): Slip[] {
+  function update(next: string, updateOptions?: { neverFlag?: readonly TextSpan[] }): Slip[] {
+    tracker.setNeverFlag(updateOptions?.neverFlag ?? []);
     if (!tracker.applyEdit(next)) return slips();
     languageTool.schedule();
     llmScheduler?.schedule();

@@ -541,6 +541,80 @@ describe('createFieldChecker', () => {
     });
   });
 
+  describe('never-flag spans', () => {
+    const span = (text: string, word: string) => ({ start: text.indexOf(word), end: text.indexOf(word) + word.length });
+
+    it('drops a Slip that touches a span, and does not report it to the Tally', async () => {
+      const field = setup();
+      const text = 'I will recieve it.';
+
+      field.update(text, { neverFlag: [span(text, 'recieve')] });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      expect(latest).toEqual([]);
+      expect(field.slips()).toEqual([]);
+      expect(tally.counts).toEqual({});
+    });
+
+    it('drops a Slip a span only partly covers', async () => {
+      const field = setup();
+      const text = 'I will recieve it.';
+
+      field.update(text, { neverFlag: [{ start: 12, end: 20 }] });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      expect(latest).toEqual([]);
+    });
+
+    it('keeps and tallies a Slip right next to a span', async () => {
+      const field = setup();
+      const text = 'I will recieve@Dana it.';
+
+      field.update(text, { neverFlag: [span(text, '@Dana')] });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      expect(latest.map((slip) => text.slice(slip.start, slip.end))).toEqual(['recieve']);
+      expect(tally.counts).toEqual({ spelling: { 'Spelling mistake': 1 } });
+    });
+
+    it('sends the whole text to LanguageTool, spans included', async () => {
+      const field = setup();
+      const text = 'Thanks @Dana for the fix.';
+
+      field.update(text, { neverFlag: [span(text, '@Dana')] });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      expect(sentTexts()).toEqual([text]);
+    });
+
+    it('uses the spans of the latest update only', async () => {
+      const field = setup();
+      const text = 'I will recieve it.';
+      field.update(text, { neverFlag: [span(text, 'recieve')] });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      const covered = field.update(text, { neverFlag: [span(text, 'recieve')] });
+      const uncovered = field.update(text);
+
+      expect(covered).toEqual([]);
+      expect(uncovered.map((slip) => slip.kind)).toEqual(['spelling']);
+      expect(sentTexts()).toEqual([text]);
+    });
+
+    it('does not follow a span through an edit: the spans of the new text decide', async () => {
+      const field = setup();
+      const first = 'I recieve it.';
+      field.update(first, { neverFlag: [span(first, 'recieve')] });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      const second = 'Oh no. I recieve it.';
+      field.update(second, { neverFlag: [] });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+      expect(latest.map((slip) => second.slice(slip.start, slip.end))).toEqual(['recieve']);
+    });
+  });
+
   describe('ignore here', () => {
     it('keeps an ignored Slip hidden when the paragraph around its unchanged word is re-checked', async () => {
       const field = setup();

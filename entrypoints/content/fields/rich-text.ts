@@ -13,19 +13,36 @@ export interface RichTextReader {
   read(): Omit<FieldRead, 'composing'>;
 }
 
-export function createRichTextReader(host: HTMLElement): RichTextReader {
+export interface RegionRules {
+  notChecked: readonly string[];
+  neverFlag: readonly string[];
+}
+
+export const REGION_RULES: RegionRules = {
+  notChecked: ['pre', 'blockquote', '.ql-code-block'],
+  neverFlag: ['code', 'ts-mention', '[data-type="mention"]', '[contenteditable="false"]', 'img.emoji', 'img[data-emoji]'],
+};
+
+interface Regions {
+  notChecked: string;
+  neverFlag: string;
+}
+
+export function createRichTextReader(host: HTMLElement, regionRules: RegionRules = REGION_RULES): RichTextReader {
+  const regions = { notChecked: regionRules.notChecked.join(','), neverFlag: regionRules.neverFlag.join(',') };
   return {
     read() {
-      const { text, segments } = layOut(linesOf(host));
-      return { text, neverFlag: [], rangeFor: (span) => rangeOver(host, segments, span) };
+      const { text, segments, neverFlag } = layOut(linesOf(host, regions));
+      return { text, neverFlag, rangeFor: (span) => rangeOver(host, segments, span) };
     },
   };
 }
 
 interface Piece {
-  node: Text;
+  node: Text | null;
   nodeStart: number;
   text: string;
+  neverFlag: boolean;
 }
 
 type Line = Piece[];
@@ -39,7 +56,7 @@ interface Run {
   endsWithBreak: boolean;
 }
 
-type Role = 'skip' | 'block' | 'inline' | 'br';
+type Role = 'skip' | 'block' | 'inline' | 'br' | 'region' | 'chip';
 
 const BLOCK_TAGS = new Set([
   'address', 'article', 'aside', 'blockquote', 'dd', 'div', 'dl', 'dt', 'fieldset', 'figcaption', 'figure',
@@ -52,9 +69,10 @@ const SKIPPED_TAGS = new Set([
   'select', 'textarea',
 ]);
 
-function classify(element: Element): Role {
+const matches = (element: Element, selectors: string): boolean => selectors !== '' && element.matches(selectors);
+
+function classify(element: Element, regions: Regions): Role {
   if (
-    SKIPPED_TAGS.has(element.localName) ||
     element.hasAttribute('hidden') ||
     element.getAttribute('aria-hidden') === 'true' ||
     element.hasAttribute('data-slate-placeholder') ||
@@ -62,8 +80,37 @@ function classify(element: Element): Role {
   ) {
     return 'skip';
   }
+  if (matches(element, regions.notChecked)) return 'region';
+  const isBlock = BLOCK_TAGS.has(element.localName);
+  if (!isBlock && matches(element, regions.neverFlag)) return 'chip';
+  if (SKIPPED_TAGS.has(element.localName)) return 'skip';
   if (element.localName === 'br') return 'br';
-  return BLOCK_TAGS.has(element.localName) ? 'block' : 'inline';
+  return isBlock ? 'block' : 'inline';
+}
+
+const SINGLE_EMOJI = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator})/u;
+const OBJECT_REPLACEMENT = String.fromCharCode(0xfffc);
+
+function emojiOf(image: Element): string {
+  const alt = image.getAttribute('alt')?.trim() ?? '';
+  const graphemes = [...new Intl.Segmenter().segment(alt)];
+  return graphemes.length === 1 && SINGLE_EMOJI.test(alt) ? alt : OBJECT_REPLACEMENT;
+}
+
+function labelOf(chip: Element, regions: Regions): Piece[] {
+  if (chip.localName === 'img') return [{ node: null, nodeStart: 0, text: emojiOf(chip), neverFlag: true }];
+  const pieces: Piece[] = [];
+  for (const child of chip.childNodes) {
+    if (child instanceof Text) {
+      for (const piece of piecesOf(child)) {
+        if (piece.text.trim()) pieces.push({ ...piece, text: piece.text.replace(/\s/g, ' '), neverFlag: true });
+      }
+    } else if (child instanceof Element) {
+      const role = classify(child, regions);
+      if (role === 'block' || role === 'inline' || role === 'chip') pieces.push(...labelOf(child, regions));
+    }
+  }
+  return pieces;
 }
 
 const TYPED_CHARACTERS = /[^\u200b\ufeff\u2060]+/g;
@@ -73,19 +120,20 @@ function piecesOf(node: Text): Piece[] {
     node,
     nodeStart: match.index,
     text: match[0].replace(/\u00a0/g, ' '),
+    neverFlag: false,
   }));
 }
 
 const textOf = (line: Line): string => line.map((piece) => piece.text).join('');
 
-function linesOf(block: Element): Line[] {
-  const items = itemsOf(block);
+function linesOf(block: Element, regions: Regions): Line[] {
+  const items = itemsOf(block, regions);
   const hasChildBlocks = items.some((item) => item.kind === 'block');
   const lines = items.flatMap((item) => (item.kind === 'run' && item.isGap && hasChildBlocks ? [] : item.lines));
   return lines.length ? lines : [[]];
 }
 
-function itemsOf(block: Element): Item[] {
+function itemsOf(block: Element, regions: Regions): Item[] {
   const items: Item[] = [];
   let run: Run | undefined;
 
@@ -103,9 +151,21 @@ function itemsOf(block: Element): Item[] {
         run.current.push(...pieces);
         run.endsWithBreak = false;
       } else if (child instanceof Element) {
-        switch (classify(child)) {
+        switch (classify(child, regions)) {
           case 'skip':
             break;
+          case 'region':
+            endRun();
+            items.push({ kind: 'block', lines: [[]] });
+            break;
+          case 'chip': {
+            const label = labelOf(child, regions);
+            if (!label.length) break;
+            run ??= startRun();
+            run.current.push(...label);
+            run.endsWithBreak = false;
+            break;
+          }
           case 'br':
             run ??= startRun();
             breakLine(run);
@@ -115,7 +175,7 @@ function itemsOf(block: Element): Item[] {
             break;
           case 'block':
             endRun();
-            items.push({ kind: 'block', lines: linesOf(child) });
+            items.push({ kind: 'block', lines: linesOf(child, regions) });
             break;
         }
       }
@@ -144,17 +204,24 @@ function finishRun(run: Run): Item {
   return { kind: 'run', lines: run.lines, isGap: !run.hasBreak && /^\s*$/.test(textOf(run.current)) };
 }
 
-function layOut(lines: Line[]): { text: string; segments: Segment[] } {
+function layOut(lines: Line[]): { text: string; segments: Segment[]; neverFlag: TextSpan[] } {
   const segments: Segment[] = [];
+  const neverFlag: TextSpan[] = [];
   let text = '';
   lines.forEach((line, index) => {
     if (index) text += '\n';
-    for (const { node, nodeStart, text: run } of line) {
-      segments.push({ node, nodeStart, start: text.length, end: text.length + run.length, data: node.data });
+    for (const { node, nodeStart, text: run, neverFlag: flagged } of line) {
+      const start = text.length;
+      if (node) segments.push({ node, nodeStart, start, end: start + run.length, data: node.data });
+      if (flagged) {
+        const last = neverFlag.at(-1);
+        if (last?.end === start) last.end += run.length;
+        else neverFlag.push({ start, end: start + run.length });
+      }
       text += run;
     }
   });
-  return { text, segments };
+  return { text, segments, neverFlag };
 }
 
 interface Point {

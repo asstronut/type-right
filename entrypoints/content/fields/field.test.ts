@@ -271,6 +271,22 @@ describe('the Hover card', () => {
     expect(page.hover.point.mock.calls[0]![1]).toBeUndefined();
   });
 
+  it("hears of the pointer on the last line's underline below the element's box, and of it leaving", async () => {
+    const page = setup();
+    vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 50));
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 54, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    expect(page.hitAt).toHaveBeenCalledWith(page.field, 20, 54);
+
+    document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 80, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    expect(page.hitAt).toHaveBeenCalledOnce();
+    expect(page.hover.point.mock.calls.at(-1)![1]).toBeUndefined();
+  });
+
   it('closes on Escape, and when the Field changes or goes away', async () => {
     const page = setup();
     page.deliver(TEXT);

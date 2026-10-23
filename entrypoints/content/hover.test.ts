@@ -90,6 +90,22 @@ describe('the Hover card', () => {
     expect(cardIsOpen()).toBe(false);
   });
 
+  it('stays open while the pointer is on it, even when its Field hears the pointer leave after that', async () => {
+    const field = createTarget();
+    hover.point(field, hitOn(spellingSlip('recieve')));
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+    const card = document.querySelector('type-right-card')!;
+
+    card.dispatchEvent(new MouseEvent('mouseenter'));
+    hover.point(field, undefined);
+    await vi.advanceTimersByTimeAsync(CLOSE_MS);
+    expect(cardIsOpen()).toBe(true);
+
+    card.dispatchEvent(new MouseEvent('mouseleave'));
+    await vi.advanceTimersByTimeAsync(CLOSE_MS);
+    expect(cardIsOpen()).toBe(false);
+  });
+
   it('closes only the card of the Field that changed', async () => {
     const [first, second] = [createTarget(), createTarget()];
     hover.point(second, hitOn(spellingSlip('recieve')));

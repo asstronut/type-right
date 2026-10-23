@@ -1,6 +1,6 @@
 import { createBadge } from '../badge';
 import type { HoverController, HoverTarget } from '../hover';
-import type { Underlines } from '../underlines';
+import { UNDERLINE_REACH_PX, type Underlines } from '../underlines';
 import { createFieldChecker, type CheckEngines, type CheckSite } from '../../../lib/checker';
 import type { LlmHealth, PageLlmHealth } from '../../../lib/llm-health';
 import type { TextSpan } from '../../../lib/slip-tracker';
@@ -93,17 +93,27 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     frame = undefined;
   }
   const { signal } = listeners;
-  element.addEventListener('mousemove', (event) => {
+  function probe(event: MouseEvent): void {
     pointer = { x: event.clientX, y: event.clientY };
     frame ??= requestAnimationFrame(() => {
       frame = undefined;
       hover.point(target, underlines.hitAt(field, pointer.x, pointer.y));
     });
-  }, { passive: true, signal });
-  element.addEventListener('mouseleave', () => {
+  }
+  function leave(): void {
     cancelFrame();
     hover.point(target, undefined);
-  }, { signal });
+  }
+  element.addEventListener('mousemove', probe, { passive: true, signal });
+  element.addEventListener('mouseleave', leave, { signal });
+  // The last line's underline can hang below the element's box (a Rich editor has no bottom padding), where the element gets no mousemove.
+  let underBox = false;
+  document.addEventListener('mousemove', (event) => {
+    const wasUnderBox = underBox;
+    underBox = !(event.target instanceof Node && element.contains(event.target)) && isUnderBox(element, event);
+    if (underBox) probe(event);
+    else if (wasUnderBox) leave();
+  }, { passive: true, signal });
   element.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') hover.close();
   }, { signal });
@@ -132,4 +142,10 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   }, signal);
 
   return field;
+}
+
+/** Pointer coordinates are whole pixels, so a box edge between two pixels counts from the pixel it falls in. */
+function isUnderBox(element: HTMLElement, { clientX, clientY }: MouseEvent): boolean {
+  const box = element.getBoundingClientRect();
+  return clientX >= box.left && clientX <= box.right && clientY >= Math.floor(box.bottom) && clientY <= box.bottom + UNDERLINE_REACH_PX;
 }

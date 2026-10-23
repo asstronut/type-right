@@ -22,6 +22,22 @@
         font-size: 1rem;
         margin-top: 2rem;
       }
+      #other-scroller {
+        height: 120px;
+        overflow-y: auto;
+        border: 1px solid #bbb;
+        margin: 0;
+      }
+      .sticky-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        display: flex;
+        justify-content: flex-end;
+        padding: 8px;
+        background: #f6f8fa;
+        border-top: 1px solid #d0d7de;
+      }
     </style>
   </head>
   <body>
@@ -36,5 +52,33 @@
 
     <h2>Tall, scrollable textarea</h2>
     <textarea rows="3" style="height: 4rem"></textarea>
+
+    <h2>Unrelated scrolling panel</h2>
+    <pre id="other-scroller">Unrelated panel line 1
+Unrelated panel line 2
+Unrelated panel line 3
+Unrelated panel line 4
+Unrelated panel line 5
+Unrelated panel line 6
+Unrelated panel line 7
+Unrelated panel line 8
+Unrelated panel line 9
+Unrelated panel line 10
+Unrelated panel line 11
+Unrelated panel line 12
+Unrelated panel line 13
+Unrelated panel line 14
+Unrelated panel line 15
+Unrelated panel line 16
+Unrelated panel line 17
+Unrelated panel line 18
+Unrelated panel line 19
+Unrelated panel line 20</pre>
+
+    <h2>Tall textarea under a sticky footer (GitHub)</h2>
+    <div class="issue-form">
+      <textarea rows="40"></textarea>
+      <div class="sticky-footer"><button type="button">Create</button></div>
+    </div>
   </body>
 </html>

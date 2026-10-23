@@ -78,7 +78,7 @@ describe('the text of blocks', () => {
     expect(text).toBe('Reminder for @team: it is due.\n\n\nPlease be carefull');
   });
 
-  it("reads Gmail's bare text beside divs, its trailing breaks and its signature as lines", () => {
+  it("reads Gmail's bare text beside divs, its trailing breaks as lines, without its signature or quoted history", () => {
     const text = textOf(
       '<div><div class="gmail_default">' +
         ZERO_WIDTH_SPACE +
@@ -93,7 +93,7 @@ describe('the text of blocks', () => {
     );
 
     expect(text).toBe(
-      "@budi thanks for fixing the bug!\nThe build passed on the first try.\n\nBudi's note was short. Let's hope it works everywhere ✅ See https://example.com/pull/42 if you want to check the diffrence.\n\n-- \nSender Name\nOn Mon, Oct 19, 2026 at 9:00 AM Budi wrote:\n",
+      "@budi thanks for fixing the bug!\nThe build passed on the first try.\n\nBudi's note was short. Let's hope it works everywhere ✅ See https://example.com/pull/42 if you want to check the diffrence.",
     );
   });
 });
@@ -354,7 +354,7 @@ describe('regions that are not checked', () => {
     ['a code line outside any container', '<p>before</p><div class="ql-code-block">x.adress();</div><p>after</p>', 'before\n\nafter'],
     ['a blockquote of paragraphs', '<p>before</p><blockquote><p>a adress</p><p>b</p></blockquote><p>after</p>', 'before\n\nafter'],
     ['a region at the start', '<blockquote>quoted</blockquote><p>after</p>', '\nafter'],
-    ['a region at the end', '<p>before</p><pre>code</pre>', 'before\n'],
+    ['a region at the end', '<p>before</p><pre>code</pre>', 'before'],
     ['a region in the middle of a line', '<div>one <blockquote>quoted</blockquote> two</div>', 'one \n\n two'],
     [
       "Draft.js's nested code block",
@@ -399,8 +399,48 @@ describe('regions that are not checked', () => {
   });
 
   it('has the generic selectors built in', () => {
-    expect(REGION_RULES.notChecked).toEqual(['pre', 'blockquote', '.ql-code-block']);
+    expect(REGION_RULES.notChecked).toEqual(
+      expect.arrayContaining(['pre', 'blockquote', '.ql-code-block', '.gmail_signature', '.gmail_signature_prefix', '.gmail_quote']),
+    );
     expect(REGION_RULES.neverFlag).toEqual(expect.arrayContaining(['code', '[contenteditable="false"]']));
+  });
+});
+
+const GMAIL_COMPOSE =
+  `<div><div class="gmail_default" style="font-family: georgia, serif;">​<span style="font-family: Arial, Helvetica, sans-serif; background-color: transparent;">@budi thanks for fixing the bug! I merged your change into \`main\`.</span></div>The build passed on the first try.<br><br>Budi's note was short: "it works on my machine." Let's hope it works everywhere <img data-emoji="✅" class="an1" alt="✅" aria-label="✅" draggable="false" src="https://fonts.gstatic.com/s/e/notoemoji/17.0/2705/72.png" loading="lazy"> See https://example.com/pull/42 if you want to check the diffrence.<br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div dir="ltr"><font face="georgia,serif">Sender Name<br></font></div></div>`;
+
+const GMAIL_REPLY =
+  '<div dir="ltr">Thanks, i will recieve it.</div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">On Mon, Oct 20, 2025 at 9:00 AM Budi &lt;budi@example.com&gt; wrote:<br></div><blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex"><div dir="ltr">Quoted adress here.</div></blockquote></div>';
+
+describe("Gmail's signature and quoted history", () => {
+  it('leaves the signature and its "-- " line out of the read', () => {
+    const { text } = readOf(GMAIL_COMPOSE);
+
+    expect(text).not.toContain('Sender Name');
+    expect(text).not.toContain('--');
+    expect(text.endsWith('the diffrence.')).toBe(true);
+  });
+
+  it('leaves the quoted history of a reply out of the read', () => {
+    const { text } = readOf(GMAIL_REPLY);
+
+    expect(text).toBe('Thanks, i will recieve it.');
+  });
+
+  it('keeps an empty line in place of the signature when typed text follows it', () => {
+    expect(textOf('<p>A</p><div class="gmail_signature">Sender</div><p>B</p>')).toBe('A\n\nB');
+  });
+
+  it('leaves the line being typed unfinished however many spacers sit before the signature', () => {
+    const typing = '<div>Hello wor</div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature">Sender</div>';
+
+    expect(textOf(typing)).toBe('Hello wor');
+  });
+
+  it('keeps the offsets of the checked text', () => {
+    const { text, rangeFor } = readOf(GMAIL_COMPOSE);
+
+    expect(textUnder(rangeFor(spanOf(text, 'diffrence')))).toBe('diffrence');
   });
 });
 

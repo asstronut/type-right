@@ -19,7 +19,15 @@ export interface RegionRules {
 }
 
 export const REGION_RULES: RegionRules = {
-  notChecked: ['pre', 'blockquote', '.ql-code-block'],
+  notChecked: [
+    'pre',
+    'blockquote',
+    '.ql-code-block',
+    // #73: Gmail's signature, the "-- " line before it, and the quoted history of a reply.
+    '.gmail_signature',
+    '.gmail_signature_prefix',
+    '.gmail_quote',
+  ],
   neverFlag: ['code', 'ts-mention', '[data-type="mention"]', '[contenteditable="false"]', 'img.emoji', 'img[data-emoji]'],
 };
 
@@ -32,7 +40,7 @@ export function createRichTextReader(host: HTMLElement, regionRules: RegionRules
   const regions = { notChecked: regionRules.notChecked.join(','), neverFlag: regionRules.neverFlag.join(',') };
   return {
     read() {
-      const { text, segments, neverFlag } = layOut(linesOf(host, regions));
+      const { text, segments, neverFlag } = layOut(endAtLastCheckedLine(linesOf(host, regions)));
       return { text, neverFlag, rangeFor: (span) => rangeOver(host, segments, span) };
     },
   };
@@ -46,6 +54,8 @@ interface Piece {
 }
 
 type Line = Piece[];
+
+const standIns = new WeakSet<Line>();
 
 type Item = { kind: 'block'; lines: Line[] } | { kind: 'run'; lines: Line[]; isGap: boolean };
 
@@ -156,7 +166,7 @@ function itemsOf(block: Element, regions: Regions): Item[] {
             break;
           case 'region':
             endRun();
-            items.push({ kind: 'block', lines: [[]] });
+            items.push({ kind: 'block', lines: [standIn()] });
             break;
           case 'chip': {
             const label = labelOf(child, regions);
@@ -185,6 +195,19 @@ function itemsOf(block: Element, regions: Regions): Item[] {
   visit(block);
   endRun();
   return items;
+}
+
+function standIn(): Line {
+  const line: Line = [];
+  standIns.add(line);
+  return line;
+}
+
+function endAtLastCheckedLine(lines: Line[]): Line[] {
+  if (!standIns.has(lines.at(-1) ?? [])) return lines;
+  let end = lines.length;
+  while (end > 1 && (standIns.has(lines[end - 1]!) || textOf(lines[end - 1]!).trim() === '')) end--;
+  return lines.slice(0, end);
 }
 
 function startRun(): Run {

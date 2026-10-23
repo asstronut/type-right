@@ -442,6 +442,45 @@ describe('createFieldChecker', () => {
       await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS);
       expect(llmSent()).toEqual(['She ate a apple.']);
     });
+
+    it('sends nothing to LanguageTool when a back-off that began mid-composition ends, until the commit', async () => {
+      const field = setup();
+      let rateLimit!: () => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            rateLimit = () => resolve(new Response('Too many requests', { status: 429, headers: { 'Retry-After': '10' } }));
+          }),
+      );
+      field.update('I will recieve it');
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+      field.update('I will recieve it nihao', { composing: true });
+      rateLimit();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(sentTexts()).toEqual(['I will recieve it']);
+
+      field.update('I will recieve it nihao', { composing: false });
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+      expect(sentTexts()).toEqual(['I will recieve it', 'I will recieve it nihao']);
+    });
+
+    it('sends nothing to the LLM when its health recovers mid-composition, until the commit', async () => {
+      const field = setup(undefined, true);
+      llmResponses.push(() => new Response('{}', { status: 401 }));
+      await field.typeAndWait('Bye.');
+      expect(field.llmHealth()).toEqual({ state: 'failing', reason: 'no-key' });
+      field.update('Bye. nihao', { composing: true });
+
+      field.changeSettings({ llmApiKey: 'new-key' });
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS * 4);
+      expect(field.llmHealth()).toEqual({ state: 'active' });
+      expect(llmSent()).toEqual(['Bye.']);
+
+      field.update('Bye. nihao', { composing: false });
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS);
+      expect(llmSent()).toEqual(['Bye.', 'Bye.']);
+    });
   });
 
   describe('paragraph scope', () => {

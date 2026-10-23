@@ -98,9 +98,13 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
   /** LLM results by sentence text, so an unchanged sentence is never sent twice. */
   const sentenceCache = createSentenceCache();
 
+  /** Whether an update arrived while composing, so no check starts and the next update that is not composing owes one. */
+  let held = false;
+
   const languageTool = createCheckScheduler({
     debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
     prepareRun() {
+      if (held) return false;
       if (options.site && isSiteDisabled(options.site.hostname, options.site.settings())) {
         tracker.clearDirty();
         return false;
@@ -119,6 +123,7 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     createCheckScheduler({
       debounceMs: options.llmDebounceMs ?? DEFAULT_LLM_DEBOUNCE_MS,
       prepareRun() {
+        if (held) return false;
         if (!llm.health.mayCheck().allowed) {
           // Consent or the key withdrawn, or the site excluded or disabled, since the last check: drop what the LLM found.
           if (tracker.clearSlips('llm')) notify();
@@ -138,9 +143,6 @@ export function createFieldChecker(options: FieldCheckerOptions): FieldChecker {
     // The LLM works again, maybe after another field's check: no need to sit out this field's pause.
     if (health.state === 'active') llmScheduler?.unblock();
   });
-
-  /** Whether an update arrived while composing, so the next one that is not owes a check. */
-  let held = false;
 
   function update(next: string, updateOptions?: { neverFlag?: readonly TextSpan[]; composing?: boolean }): Slip[] {
     tracker.setNeverFlag(updateOptions?.neverFlag ?? []);

@@ -3,6 +3,7 @@ import 'quill/dist/quill.core.css';
 import { expose } from './fixture.js';
 import { buildPage, check, getVariant, remount, tallerThanScroller, textboxAttributes } from './layout.js';
 import { SMILE_EMOJI } from './images.js';
+import { FILLER } from './prose.js';
 
 const { column, library } = __FIXTURE__;
 const variant = getVariant();
@@ -58,15 +59,17 @@ Quill.register(MentionBlot);
 Quill.register(EmojiBlot);
 
 function seededContents() {
-  return new Delta()
+  const codeLines = ['if (invoice.recieve) {', '  send(invoice);', '}'];
+  const contents = new Delta()
     .insert('Hi ')
     .insert({ mention: { id: 'U0DANA', label: '@Dana' } })
     .insert(', the weekly report is ready for review. I ran ')
     .insert('refresh_all.py', { code: true })
     .insert(' this morning.\n')
     .insert('Please check the totals before noon and keep the numbers in sync.\n')
-    .insert('if (invoice.recieve) {\n  send(invoice);\n}')
-    .insert('\n', { 'code-block': true })
+    .insert(`${FILLER}\n`);
+  for (const line of codeLines) contents.insert(line).insert('\n', { 'code-block': true });
+  return contents
     .insert('Budi wrote: please recieve the files by noon and confirm.')
     .insert('\n', { blockquote: true })
     .insert('Priya said "the numbers look fine" yesterday, so we are almost done ')

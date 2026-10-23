@@ -16,9 +16,10 @@ const STYLE = `
     padding: 4px 8px;
     margin-bottom: 16px;
     font-size: 14px;
-    box-sizing: content-box;
+    box-sizing: border-box;
   }
   .scroller {
+    box-sizing: border-box;
     max-height: 240px;
     overflow-y: auto;
     border: 1px solid #888;

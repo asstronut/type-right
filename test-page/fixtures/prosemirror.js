@@ -7,7 +7,7 @@ import { EditorView } from 'prosemirror-view';
 import { expose } from './fixture.js';
 import { buildPage, check, getVariant, remount, tallerThanScroller, textboxAttributes } from './layout.js';
 import { elementsNotChecked, findLastWord, inlineCode, modelText } from './pm-shared.js';
-import { countCycleWords, hasStubWord, longParagraphs } from './prose.js';
+import { FILLER, countCycleWords, hasStubWord, longParagraphs } from './prose.js';
 
 const { column, library } = __FIXTURE__;
 const variant = getVariant();
@@ -23,6 +23,7 @@ function seededDoc() {
   return schema.node('doc', null, [
     paragraph('Hello team, here is a short update on the migration. It occured on Tuesday night and everything is back to normal.'),
     paragraph('The checklist below shows what changed in the last release. Read it carefully and flag anything that looks wrong before the review on Thursday.'),
+    paragraph(FILLER),
     schema.node('code_block', null, schema.text('if (invoice.recieve) {\n  send(invoice);\n}')),
     schema.node('blockquote', null, [paragraph('Budi wrote: please recieve the files by noon and confirm.')]),
     paragraph('To refresh the numbers I ran ', inlineCodeText('refresh_all.py'), ' this morning, then checked the totals twice.'),

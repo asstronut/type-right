@@ -34,6 +34,9 @@ const TAILS = [
   'so nothing blocks Monday',
 ];
 
+export const FILLER =
+  'The report covers the last four weeks of support tickets, grouped by product area. Start with the summary and skip the appendix unless something looks off.';
+
 export const LONG_PARAGRAPH_COUNT = 500;
 
 export function longParagraphs(count = LONG_PARAGRAPH_COUNT) {

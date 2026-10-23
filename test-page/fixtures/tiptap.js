@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { expose } from './fixture.js';
 import { buildPage, check, el, getVariant, remount, tallerThanScroller, textboxAttributes } from './layout.js';
 import { elementsNotChecked, findLastWord, inlineCode, modelText } from './pm-shared.js';
-import { hasStubWord } from './prose.js';
+import { FILLER, hasStubWord } from './prose.js';
 
 const { column, library } = __FIXTURE__;
 const variant = getVariant();
@@ -24,6 +24,7 @@ const seededContent = {
       ', are you free for lunch on Friday? I found a new cafe near the office.',
     ),
     paragraph('They have a good menu. The owner said "everything is made fresh every day," which sounds promising.'),
+    paragraph(FILLER),
     { type: 'codeBlock', content: [text('if (invoice.recieve) {\n  send(invoice);\n}')] },
     { type: 'blockquote', content: [paragraph('Budi wrote: please recieve the files by noon and confirm.')] },
     paragraph('To refresh the numbers I ran ', text('refresh_all.py', [{ type: 'code' }]), ' this morning, then checked the totals twice.'),
@@ -66,7 +67,9 @@ decoyTextarea.value = 'a dekoy draft';
 
 let dialog = null;
 if (variant === 'modal') {
-  dialog = el('dialog', { id: 'composer-dialog', 'aria-label': 'Create a post' }, el('h2', { text: 'Create a post' }), decoyTextarea, scroller);
+  const title = el('h2', { text: 'Create a post' });
+  title.style.margin = '0 0 8px';
+  dialog = el('dialog', { id: 'composer-dialog', 'aria-label': 'Create a post' }, title, decoyTextarea, scroller);
   dialog.style.cssText = 'width: 640px; max-width: calc(100vw - 32px); padding: 16px; border: 1px solid #888; border-radius: 12px;';
   dialog.addEventListener('cancel', (event) => event.preventDefault());
   document.body.append(dialog);

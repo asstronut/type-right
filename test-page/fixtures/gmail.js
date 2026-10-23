@@ -1,7 +1,7 @@
 import { expose } from './fixture.js';
 import { CHECK_EMOJI } from './images.js';
 import { buildPage, check, el, getVariant, tallerThanScroller, textboxAttributes } from './layout.js';
-import { countCycleWords, longParagraphs } from './prose.js';
+import { FILLER, countCycleWords, longParagraphs } from './prose.js';
 
 const { column, library } = __FIXTURE__;
 const variant = getVariant();
@@ -12,6 +12,7 @@ const escapeHtml = (value) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 const defaultQuote = [
   'Hi, the invoice is attached. Please recieve it and confirm on this thread.',
   'If the total looks wrong, tell me before Friday.',
+  FILLER,
   'Thanks, Budi',
 ];
 
@@ -52,7 +53,7 @@ slot.prepend(askGemini);
 let root = mount.querySelector('[g_editable]');
 
 const host = () => root;
-const typingBlock = () => root.firstElementChild;
+const typingBlock = () => [...root.children].find((block) => block.textContent.includes('check the diffrence.'));
 const quote = () => root.querySelector('div.gmail_quote');
 const signaturePrefix = () => root.querySelector('span.gmail_signature_prefix');
 const signature = () => root.querySelector('div.gmail_signature');
@@ -63,7 +64,7 @@ function seeds() {
   const checks = [
     textboxAttributes(root, 'false'),
     check('compose root has g_editable', root.getAttribute('g_editable') === 'true' && root.isContentEditable, '#:t4'),
-    check('leading U+200B', root.textContent.startsWith('​'), JSON.stringify(root.textContent.slice(0, 2))),
+    check('leading U+200B', typingBlock().textContent.startsWith('​'), JSON.stringify(typingBlock().textContent.slice(0, 2))),
     check('image emoji', root.querySelector('img[data-emoji]')?.src.startsWith('data:'), 'img[data-emoji] with a data: URI'),
     check('signature', signaturePrefix()?.textContent === '-- ' && signature()?.textContent.includes('Sender Name'), 'span.gmail_signature_prefix + div.gmail_signature'),
     check(
@@ -71,7 +72,11 @@ function seeds() {
       quoted?.querySelector(':scope > div.gmail_attr + blockquote.gmail_quote')?.textContent.includes('recieve') && quoted.querySelector('div.gmail_attr')?.textContent.startsWith('On Mon, Oct 19, 2026'),
       'div.gmail_quote > div.gmail_attr + blockquote.gmail_quote',
     ),
-    check('typing block before the signature', typingBlock().innerText.trim().endsWith('diffrence.') && !typingBlock().contains(signature()), 'first div of the root'),
+    check(
+      'typing block before the signature',
+      Boolean(typingBlock()?.querySelector('.gmail_default')) && Boolean(typingBlock().compareDocumentPosition(signature()) & Node.DOCUMENT_POSITION_FOLLOWING),
+      'div holding "check the diffrence."',
+    ),
     check('decoy: hidden textarea#:ta', hiddenTextarea.isConnected && hiddenTextarea.offsetParent === null && hiddenTextarea.value === 'a dekoy body', 'textarea#:ta'),
     check('decoy: Ask Gemini combobox', askGemini.getAttribute('role') === 'combobox' && askGemini.offsetParent !== null && askGemini.isContentEditable, 'visible single-line combobox'),
     tallerThanScroller(root, scroller),

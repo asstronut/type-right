@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { expose } from './fixture.js';
 import { buildPage, check, remount, tallerThanScroller, textboxAttributes, getVariant } from './layout.js';
-import { hasStubWord } from './prose.js';
+import { FILLER, hasStubWord } from './prose.js';
 
 const { column, library } = __FIXTURE__;
 const variant = getVariant();
@@ -18,6 +18,7 @@ const paragraph = (...children) => ({ type: 'paragraph', children: children.map(
 
 const seededValue = () => [
   paragraph('Hi team, this is a short note about the weekly report. It is ready for review and the totals are in the sheet.'),
+  paragraph(FILLER),
   paragraph('Please check the numbers before noon. ', { type: 'mention', children: [{ text: '' }] }, { text: ' will merge the changes after that.' }),
   { type: 'code-block', children: [{ text: 'if (invoice.recieve) {\n  send(invoice);\n}' }] },
   { type: 'block-quote', children: [{ text: 'Budi wrote: please recieve the files by noon and confirm.' }] },

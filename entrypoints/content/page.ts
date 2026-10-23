@@ -143,7 +143,6 @@ export function runPage(options: PageOptions): void {
           attachAllWithin(node);
         }
       }
-      // An element moved within one batch of DOM changes is connected again by now and keeps its Field.
       for (const [element, field] of fields) {
         if (element.isConnected) continue;
         field.dispose();

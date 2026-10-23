@@ -81,7 +81,7 @@ function setup({ settings = DEFAULT_SETTINGS }: { settings?: Settings } = {}) {
   const underlinesFake = createFakeUnderlines();
   const hover = {
     point: vi.fn<(target: HoverTarget, hit: SlipHit | undefined) => void>(),
-    changed: vi.fn<(target: HoverTarget) => void>(),
+    closeFor: vi.fn<(target: HoverTarget) => void>(),
     close: vi.fn<() => void>(),
   };
   const languageTool = vi.fn(checkSpelling);
@@ -251,10 +251,10 @@ describe('the Hover card', () => {
     expect(page.hover.close).toHaveBeenCalledOnce();
 
     page.deliver(`${TEXT} More.`);
-    expect(page.hover.changed).toHaveBeenCalledWith(target);
-    page.hover.changed.mockClear();
+    expect(page.hover.closeFor).toHaveBeenCalledWith(target);
+    page.hover.closeFor.mockClear();
     page.field.dispose();
-    expect(page.hover.changed).toHaveBeenCalledWith(target);
+    expect(page.hover.closeFor).toHaveBeenCalledWith(target);
   });
 
   it('hands the adapter the words the card was opened on, so it can refuse a fix once they changed', async () => {

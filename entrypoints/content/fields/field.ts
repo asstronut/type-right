@@ -30,7 +30,7 @@ export interface FieldDeps {
   site: CheckSite;
   llmHealth: PageLlmHealth;
   underlines: Underlines;
-  hover: Pick<HoverController, 'point' | 'changed' | 'close'>;
+  hover: Pick<HoverController, 'point' | 'closeFor' | 'close'>;
   addToDictionary(word: string): void;
   onSlipsSeen(sightings: SlipSighting[]): void;
   /** Asked on every read: true once the extension reloaded, and the read is dropped. */
@@ -118,14 +118,14 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
       checker.dispose();
       underlines.forget(field);
       badge.destroy();
-      hover.changed(target);
+      hover.closeFor(target);
     },
   };
 
   adapter.watch((read) => {
     if (deps.noticeReload()) return;
     latest = read;
-    hover.changed(target);
+    hover.closeFor(target);
     render(checker.update(read.text));
   }, signal);
 

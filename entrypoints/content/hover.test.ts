@@ -95,10 +95,10 @@ describe('the Hover card', () => {
     hover.point(second, hitOn(spellingSlip('recieve')));
     await vi.advanceTimersByTimeAsync(OPEN_MS);
 
-    hover.changed(first);
+    hover.closeFor(first);
     expect(cardIsOpen()).toBe(true);
 
-    hover.changed(second);
+    hover.closeFor(second);
     expect(cardIsOpen()).toBe(false);
   });
 
@@ -107,7 +107,7 @@ describe('the Hover card', () => {
     hover.point(field, hitOn(spellingSlip('recieve')));
     await vi.advanceTimersByTimeAsync(OPEN_MS - 1);
 
-    hover.changed(field);
+    hover.closeFor(field);
     await vi.advanceTimersByTimeAsync(OPEN_MS);
 
     expect(cardIsOpen()).toBe(false);
@@ -118,7 +118,7 @@ describe('the Hover card', () => {
     hover.point(second, hitOn(spellingSlip('recieve')));
     await vi.advanceTimersByTimeAsync(OPEN_MS - 1);
 
-    hover.changed(first);
+    hover.closeFor(first);
     hover.point(first, undefined);
     await vi.advanceTimersByTimeAsync(1);
 

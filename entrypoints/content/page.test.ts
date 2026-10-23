@@ -489,6 +489,16 @@ describe('a Rich editor', () => {
     });
   });
 
+  it('counts a line followed by a code block at the end as a Finished sentence', async () => {
+    const editor = addEditor('<div>I recieve it</div><pre>code</pre>');
+    const page = createPage();
+    focus(editor);
+
+    await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS + DEBOUNCE_MS);
+
+    expect(page.worker.llm).toHaveBeenCalledWith('I recieve it');
+  });
+
   it('is one Field however often it is focused', async () => {
     const editor = addEditor(`<p>${TEXT}</p>`);
     const page = createPage();

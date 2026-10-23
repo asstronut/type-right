@@ -354,7 +354,7 @@ describe('regions that are not checked', () => {
     ['a code line outside any container', '<p>before</p><div class="ql-code-block">x.adress();</div><p>after</p>', 'before\n\nafter'],
     ['a blockquote of paragraphs', '<p>before</p><blockquote><p>a adress</p><p>b</p></blockquote><p>after</p>', 'before\n\nafter'],
     ['a region at the start', '<blockquote>quoted</blockquote><p>after</p>', '\nafter'],
-    ['a region at the end', '<p>before</p><pre>code</pre>', 'before'],
+    ['a region at the end', '<p>before</p><pre>code</pre>', 'before\n'],
     ['a region in the middle of a line', '<div>one <blockquote>quoted</blockquote> two</div>', 'one \n\n two'],
     [
       "Draft.js's nested code block",
@@ -383,7 +383,7 @@ describe('regions that are not checked', () => {
   });
 
   it('reads the selectors it is given instead of the built-in ones', () => {
-    const rules: RegionRules = { notChecked: ['.sig'], neverFlag: [] };
+    const rules: RegionRules = { notChecked: ['.sig'], trailing: [], neverFlag: [] };
     const host = mount('<p>A</p><div class="sig">Sender</div><pre>kept</pre>');
 
     expect(createRichTextReader(host, rules).read().text).toBe('A\n\nkept');
@@ -392,7 +392,7 @@ describe('regions that are not checked', () => {
   it('checks everything when it is given no selectors', () => {
     const host = mount('<p>A</p><pre>kept</pre><p>B <code>c</code></p>');
 
-    const read = createRichTextReader(host, { notChecked: [], neverFlag: [] }).read();
+    const read = createRichTextReader(host, { notChecked: [], trailing: [], neverFlag: [] }).read();
 
     expect(read.text).toBe('A\nkept\nB c');
     expect(read.neverFlag).toEqual([]);
@@ -400,8 +400,9 @@ describe('regions that are not checked', () => {
 
   it('has the generic selectors built in', () => {
     expect(REGION_RULES.notChecked).toEqual(
-      expect.arrayContaining(['pre', 'blockquote', '.ql-code-block', '.gmail_signature', '.gmail_signature_prefix', '.gmail_quote']),
+      expect.arrayContaining(['pre', 'blockquote', '.ql-code-block']),
     );
+    expect(REGION_RULES.trailing).toEqual(['.gmail_signature', '.gmail_signature_prefix', '.gmail_quote']);
     expect(REGION_RULES.neverFlag).toEqual(expect.arrayContaining(['code', '[contenteditable="false"]']));
   });
 });
@@ -435,6 +436,13 @@ describe("Gmail's signature and quoted history", () => {
     const typing = '<div>Hello wor</div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature">Sender</div>';
 
     expect(textOf(typing)).toBe('Hello wor');
+  });
+
+  it('keeps a code block at the end as an empty line, which only an editor-appended region does not', () => {
+    expect(textOf('<div>Can you fix teh error</div><pre>code</pre>')).toBe('Can you fix teh error\n');
+    expect(textOf('<div>Can you fix teh error</div><pre>code</pre><div class="gmail_signature">Sender</div>')).toBe(
+      'Can you fix teh error\n',
+    );
   });
 
   it('keeps the offsets of the checked text', () => {

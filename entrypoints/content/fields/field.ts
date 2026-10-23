@@ -56,6 +56,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   const { underlines, hover } = deps;
   const listeners = new AbortController();
   let latest: FieldRead | undefined;
+  let hasUnderlines = false;
 
   const checker = createFieldChecker({
     engines: deps.engines,
@@ -70,6 +71,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   function render(slips: Slip[]): void {
     if (!latest) return;
     const { rangeFor } = latest;
+    hasUnderlines = slips.length > 0;
     underlines.draw(field, slips.map((slip) => ({ slip, range: rangeFor(slip) })));
     badge.followMove();
   }
@@ -110,7 +112,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   document.addEventListener('mousemove', (event) => {
     const wasUnderBox = underBox;
     const inElement = event.target instanceof Node && element.contains(event.target);
-    underBox = !inElement && isUnderBox(element, event);
+    underBox = !inElement && hasUnderlines && isUnderBox(element, event);
     if (underBox) probe(event);
     else if (wasUnderBox && !inElement) leave();
   }, { passive: true, signal });

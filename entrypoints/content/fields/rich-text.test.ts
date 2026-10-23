@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRichTextReader, REGION_RULES, type RegionRules } from './rich-text';
+import { createRichTextReader, REGION_RULES, type RegionRules, type RichTextReader } from './rich-text';
 import { installStaticRange, textUnder } from '../test-static-range';
 
 const ZERO_WIDTH_SPACE = '\u200b';
@@ -17,12 +17,12 @@ function mount(html: string): HTMLElement {
 }
 
 function textOf(html: string): string {
-  return createRichTextReader(mount(html)).read().text;
+  return createRichTextReader(mount(html)).read([]).text;
 }
 
 function readOf(html: string) {
   const host = mount(html);
-  return { host, ...createRichTextReader(host).read() };
+  return { host, ...createRichTextReader(host).read([]) };
 }
 
 function spanOf(text: string, word: string) {
@@ -323,10 +323,13 @@ describe('reading again', () => {
   it('reads the editor as it is now, with ranges that belong to that read', () => {
     const host = mount('<p>I recieve it.</p>');
     const reader = createRichTextReader(host);
-    const first = reader.read();
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(host, { characterData: true, subtree: true });
+    const first = reader.read([]);
 
     textNodeOf(host, 'I recieve').data = 'Oh no. I recieve it.';
-    const second = reader.read();
+    const second = reader.read(observer.takeRecords());
+    observer.disconnect();
 
     expect(first.text).toBe('I recieve it.');
     expect(second.text).toBe('Oh no. I recieve it.');
@@ -377,7 +380,7 @@ describe('regions that are not checked', () => {
     const host = mount('<p>A</p><pre><code>deep</code></pre><p>B</p>');
     const childNodes = vi.spyOn(host.querySelector('pre')!, 'childNodes', 'get');
 
-    createRichTextReader(host).read();
+    createRichTextReader(host).read([]);
 
     expect(childNodes).not.toHaveBeenCalled();
   });
@@ -386,13 +389,13 @@ describe('regions that are not checked', () => {
     const rules: RegionRules = { notChecked: ['.sig'], trailing: [], neverFlag: [] };
     const host = mount('<p>A</p><div class="sig">Sender</div><pre>kept</pre>');
 
-    expect(createRichTextReader(host, rules).read().text).toBe('A\n\nkept');
+    expect(createRichTextReader(host, rules).read([]).text).toBe('A\n\nkept');
   });
 
   it('checks everything when it is given no selectors', () => {
     const host = mount('<p>A</p><pre>kept</pre><p>B <code>c</code></p>');
 
-    const read = createRichTextReader(host, { notChecked: [], trailing: [], neverFlag: [] }).read();
+    const read = createRichTextReader(host, { notChecked: [], trailing: [], neverFlag: [] }).read([]);
 
     expect(read.text).toBe('A\nkept\nB c');
     expect(read.neverFlag).toEqual([]);
@@ -552,7 +555,7 @@ describe('content that is never flagged', () => {
       const host = mount('<p>Great <img class="emoji" alt="slightly smiling face emoji" src="x"> and the remaning charts.</p>');
       addGuards(host.querySelector('img')!);
 
-      const { text, neverFlag, rangeFor } = createRichTextReader(host).read();
+      const { text, neverFlag, rangeFor } = createRichTextReader(host).read([]);
 
       expect(text).toBe(`Great ${OBJECT_REPLACEMENT} and the remaning charts.`);
       expect(neverFlag).toEqual([{ start: 6, end: 7 }]);
@@ -585,5 +588,81 @@ describe('content that is never flagged', () => {
     expect(before.endContainer).toBe(textNodeOf(host, 'I recieve '));
     expect(textUnder(after)).toBe('recieve');
     expect(after.startContainer).toBe(textNodeOf(host, ' and recieve it'));
+  });
+});
+
+describe('reading again after edits', () => {
+  function rangesOf(read: ReturnType<RichTextReader['read']>) {
+    return [...read.text.matchAll(/\S+/g)].map((match) => {
+      const range = read.rangeFor({ start: match.index, end: match.index + match[0].length });
+      return [range.startContainer, range.startOffset, range.endContainer, range.endOffset];
+    });
+  }
+
+  const edits: [string, (host: HTMLElement) => void][] = [
+    ['typing into a paragraph', (host) => textNodeOf(host, 'I recieve').appendData(' and more')],
+    ['typing a new text node', (host) => host.querySelector('p')!.append(' Then sent.')],
+    ['splitting a block', (host) => {
+      const node = textNodeOf(host, 'Second line');
+      const tail = node.splitText(node.data.indexOf('line'));
+      const next = document.createElement('p');
+      next.append(tail);
+      node.parentElement!.after(next);
+    }],
+    ['joining blocks', (host) => {
+      const [first, second] = host.querySelectorAll('p');
+      first!.append(...second!.childNodes);
+      second!.remove();
+    }],
+    ['inserting a chip', (host) => {
+      const chip = document.createElement('span');
+      chip.setAttribute('contenteditable', 'false');
+      chip.textContent = '@Dana';
+      textNodeOf(host, 'Inner text').after(' to ', chip, ' now');
+    }],
+    ['wrapping a word in bold', (host) => {
+      const node = textNodeOf(host, 'Inner text');
+      const word = node.splitText(node.data.indexOf('text'));
+      word.splitText(4);
+      const bold = document.createElement('strong');
+      word.replaceWith(bold);
+      bold.append(word);
+    }],
+    ['removing a quote', (host) => host.querySelector('blockquote')!.remove()],
+    ['typing in a deep wrapper', (host) => textNodeOf(host, 'Deep').appendData(' wrapper words')],
+    ['editing a block while it is out of the editor and putting it back', (host) => {
+      const block = host.querySelector<HTMLElement>('.wrap')!;
+      const next = block.nextSibling;
+      block.remove();
+      textNodeOf(block, 'Inner').data = 'Changed while away';
+      host.insertBefore(block, next);
+    }],
+    ['emptying a block to a break', (host) => host.querySelector('p')!.replaceChildren(document.createElement('br'))],
+    ['typing after the quoted history', (host) => host.append('Below')],
+    ['replacing every block', (host) => (host.innerHTML = '<p>Fresh start</p><p>And again</p>')],
+  ];
+
+  it('reads after each edit what a fresh read of the editor gives', () => {
+    const host = mount(
+      '<p>I recieve it.</p><p>Second line here</p>' +
+        '<div class="wrap"><div class="inner">Inner text</div><div><div>Deep</div></div></div>' +
+        '<blockquote><p>quoted adress</p></blockquote><p>After the quote</p>' +
+        '<div class="gmail_quote">On Monday, Dana wrote</div>',
+    );
+    const reader = createRichTextReader(host);
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(host, { childList: true, characterData: true, subtree: true });
+    reader.read([]);
+
+    for (const [name, edit] of edits) {
+      edit(host);
+      const incremental = reader.read(observer.takeRecords());
+      const fresh = createRichTextReader(host).read([]);
+
+      expect(incremental.text, name).toBe(fresh.text);
+      expect(incremental.neverFlag, name).toEqual(fresh.neverFlag);
+      expect(rangesOf(incremental), name).toEqual(rangesOf(fresh));
+    }
+    observer.disconnect();
   });
 });

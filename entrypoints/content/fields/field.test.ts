@@ -298,6 +298,25 @@ describe('the Hover card', () => {
     expect(page.hover.point.mock.calls.at(-1)![1]).toBeUndefined();
   });
 
+  it("measures nothing as the pointer moves on the page while the Field has no underline, and hears of it below the box once it has one", async () => {
+    const page = setup();
+    const measure = vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 50));
+    page.deliver('All good.');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    measure.mockClear();
+
+    document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 54, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    expect(measure).not.toHaveBeenCalled();
+    expect(page.hitAt).not.toHaveBeenCalled();
+
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 54, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    expect(page.hitAt).toHaveBeenCalledWith(page.field, 20, 54);
+  });
+
   it('keeps probing when the pointer moves up from below the box onto the words', async () => {
     const page = setup();
     vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 50));

@@ -1,5 +1,5 @@
 import type { Slip } from '../../lib/slips';
-import { KIND_COLORS } from './field-overlay';
+import { KIND_COLORS } from './underlines';
 
 /** LanguageTool can return dozens of suggestions for a misspelling; only the first few are useful. */
 const MAX_SUGGESTIONS = 5;
@@ -170,10 +170,6 @@ export class HoverCard {
     this.root.addEventListener('mousedown', (event) => {
       if ((event.target as Element).closest('button')) event.preventDefault();
     });
-  }
-
-  get shownSlip(): Slip | null {
-    return this.shown;
   }
 
   /** Shows the card for `content`, placed beside `anchor` (the underlined text's box). */

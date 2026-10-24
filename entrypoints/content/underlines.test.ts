@@ -106,6 +106,17 @@ describe('drawing', () => {
   });
 });
 
+describe("measuring a Slip's underline", () => {
+  it("gives the box of the owner's underline for that Slip, and nothing for a Slip it doesn't underline", () => {
+    const owner = {};
+    underlines.draw(owner, [{ slip: slip(), range: rangeOver(BELOW_LINE).range }]);
+
+    expect(underlines.boundsOf(owner, slip())).toEqual(BELOW_LINE);
+    expect(underlines.boundsOf(owner, { ...slip(), start: 5, end: 9 })).toBeUndefined();
+    expect(underlines.boundsOf({}, slip())).toBeUndefined();
+  });
+});
+
 describe('finding the Slip under the pointer', () => {
   it('probes the line below the glyphs, up to 6 px under them', () => {
     const owner = {};

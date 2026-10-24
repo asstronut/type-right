@@ -15,6 +15,10 @@ const APPLY_NOTES: Partial<Record<ApplyResult, string>> = {
 
 /** What the Hover card's buttons do for the Field whose Slip it shows. */
 export interface HoverTarget {
+  /** The Field's element, so the card can join it in a modal dialog. */
+  readonly element: HTMLElement;
+  /** Where the Slip's words are now, or `undefined` once they left what shows of the Field. */
+  anchorOf(slip: Slip): DOMRect | undefined;
   /** The Field's text the Slip flags, as it is now. */
   textOf(slip: Slip): string;
   canApply(slip: Slip): boolean;
@@ -24,19 +28,27 @@ export interface HoverTarget {
   addToDictionary(word: string): void;
 }
 
-interface Shown {
+interface Pointed {
   target: HoverTarget;
   slip: Slip;
 }
 
-interface Pending extends Shown {
+interface Pending extends Pointed {
   timer: ReturnType<typeof setTimeout>;
+}
+
+interface Shown extends Pointed {
+  hoveredLine: DOMRect;
+  wordsWithLine: DOMRect | undefined;
+  /** Why an Apply failed. Such a card tells about an edit that may have removed its Slip, so it outlives the Slip. */
+  note: string | undefined;
 }
 
 /**
  * Opens the page's Hover card when the pointer rests on an underline, keeps it
- * open while the pointer is on the underline or the card, and closes it when
- * the pointer moves away or the user types.
+ * open while the pointer is on the underline or the card, follows the words
+ * as the page scrolls, and closes it when the pointer moves away, the words
+ * scroll out of sight or the user types.
  */
 export class HoverController {
   private readonly card = new HoverCard({
@@ -53,14 +65,15 @@ export class HoverController {
   private shown: Shown | null = null;
   private pending: Pending | null = null;
   private closeTimer: ReturnType<typeof setTimeout> | undefined;
+  private frame: number | undefined;
   private readonly listeners = new AbortController();
 
   constructor() {
-    // The card is placed against the underline's viewport position, so it can't follow a page scroll.
+    const { signal } = this.listeners;
     document.addEventListener('scroll', (event) => {
-      if (!this.card.contains(event.target)) this.close();
-    }, { capture: true, signal: this.listeners.signal });
-    window.addEventListener('resize', () => this.close(), { signal: this.listeners.signal });
+      if (!this.card.contains(event.target)) this.pageMoved();
+    }, { capture: true, passive: true, signal });
+    window.addEventListener('resize', () => this.pageMoved(), { passive: true, signal });
   }
 
   point(target: HoverTarget, hit: SlipHit | undefined): void {
@@ -90,6 +103,14 @@ export class HoverController {
   closeFor(target: HoverTarget): void {
     if (this.pending?.target === target) this.cancelPending();
     if (this.shown?.target === target) this.hide();
+  }
+
+  /** Closes `target`'s card, or cancels its pending open, when its Slip is not among `slips`. */
+  keepOnly(target: HoverTarget, slips: readonly Slip[]): void {
+    const gone = (held: Pointed | null) =>
+      held?.target === target && !slips.some((slip) => isSame(held, target, slip));
+    if (gone(this.pending)) this.cancelPending();
+    if (gone(this.shown) && !this.shown?.note) this.hide();
   }
 
   private open(target: HoverTarget, hit: SlipHit, note?: string): void {
@@ -124,8 +145,27 @@ export class HoverController {
             : undefined,
       },
       rect,
+      target.element,
     );
-    this.shown = { target, slip };
+    this.shown = { target, slip, hoveredLine: rect, wordsWithLine: target.anchorOf(slip), note };
+  }
+
+  private pageMoved(): void {
+    this.cancelPending();
+    this.frame ??= requestAnimationFrame(() => {
+      this.frame = undefined;
+      this.follow();
+    });
+  }
+
+  private follow(): void {
+    if (!this.shown) return;
+    const { target, slip, hoveredLine: line, wordsWithLine: before } = this.shown;
+    const words = target.anchorOf(slip);
+    if (!words || !before) return this.close();
+    const moved = new DOMRect(line.x + words.x - before.x, line.y + words.y - before.y, line.width, line.height);
+    this.shown = { ...this.shown, hoveredLine: moved, wordsWithLine: words };
+    this.card.moveTo(moved);
   }
 
   close(): void {
@@ -136,6 +176,7 @@ export class HoverController {
   /** Stops listening to the page and takes the card off it for good. */
   destroy(): void {
     this.listeners.abort();
+    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.close();
     this.card.destroy();
   }
@@ -163,6 +204,6 @@ export class HoverController {
   }
 }
 
-function isSame(shown: Shown, target: HoverTarget, slip: Slip): boolean {
+function isSame(shown: Pointed, target: HoverTarget, slip: Slip): boolean {
   return shown.target === target && shown.slip.start === slip.start && shown.slip.end === slip.end && shown.slip.id === slip.id;
 }

@@ -1,5 +1,7 @@
 import type { LlmFailure } from '../../lib/engine';
 import type { LlmHealth } from '../../lib/llm-health';
+import { lower, raise } from './top-layer';
+import { visibleBox } from './visible-box';
 
 const LT_STILL_WORKS = 'LanguageTool underlines keep working.';
 
@@ -29,54 +31,110 @@ function badgeFor(health: LlmHealth): { label: string; color: string; title: str
   }
 }
 
-/** Keeps the badge clear of the textarea's resize grip in the bottom-right corner. */
-const BADGE_INSET_PX = { right: 18, bottom: 4 };
+/** From the visible box's bottom-right corner; a textarea's is wider to keep clear of its resize grip. */
+const TEXTAREA_INSET_PX = { right: 18, bottom: 4 };
+const RICH_EDITOR_INSET_PX = { right: 4, bottom: 4 };
+const IDLE_OPACITY = '0.85';
+const TYPING_OPACITY = '0.25';
+const FADE_BACK_MS = 1500;
+
+interface Spot {
+  left: number;
+  top: number;
+}
 
 export interface Badge {
   setLlmHealth(health: LlmHealth): void;
-  followMove(): void;
+  followRead(): void;
   destroy(): void;
 }
 
 /**
- * Says in a corner of `element` whether the Field's text goes to the LLM;
- * hovering it tells why. It follows the element when the page scrolls or the
- * element is resized, and hides while the element is removed or has no box.
+ * Says in the bottom-right corner of what shows of `element` whether the
+ * Field's text goes to the LLM; hovering it tells why. It moves up the right
+ * edge while site UI covers that corner, hides when no spot is clear or
+ * nothing of the element shows, and fades while the user types.
  */
 export function createBadge(element: HTMLElement): Badge {
   const badge = document.createElement('div');
   badge.setAttribute('data-type-right-badge', '');
+  badge.popover = 'manual';
   Object.assign(badge.style, {
     position: 'fixed',
+    inset: 'auto',
+    margin: '0',
+    border: '0',
+    overflow: 'visible',
     display: 'none',
     padding: '1px 5px',
     borderRadius: '8px',
     font: '600 10px/14px system-ui, sans-serif',
     color: '#fff',
-    opacity: '0.85',
+    opacity: IDLE_OPACITY,
     cursor: 'default',
     userSelect: 'none',
-    zIndex: '2147483647',
   });
   document.documentElement.appendChild(badge);
+  const inset = element instanceof HTMLTextAreaElement ? TEXTAREA_INSET_PX : RICH_EDITOR_INSET_PX;
 
+  let placedBoxKey: string | undefined;
   function place(): void {
-    if (!badge.textContent) return;
-    const rect = visibleBox(element);
-    if (!element.isConnected || !rect) {
-      badge.style.display = 'none';
-      return;
+    frame = undefined;
+    const box = badge.textContent ? visibleBox(element) : undefined;
+    const boxKey = box && `${box.left},${box.top},${box.right},${box.bottom}`;
+    if (boxKey !== undefined && boxKey === placedBoxKey) return;
+    placedBoxKey = boxKey;
+    if (!box) return lower(badge);
+    raise(badge, element);
+    const spot = clearSpotIn(box, badge.offsetWidth, badge.offsetHeight);
+    if (!spot) return lower(badge);
+    badge.style.left = `${spot.left}px`;
+    badge.style.top = `${spot.top}px`;
+  }
+
+  function clearSpotIn(box: DOMRect, width: number, height: number): Spot | undefined {
+    const left = box.right - inset.right - width;
+    for (let top = box.bottom - inset.bottom - height; top >= box.top; top -= height) {
+      if (isWhollyUncovered(left, top, width, height)) return { left, top };
     }
-    badge.style.display = 'block';
-    badge.style.left = `${rect.right - BADGE_INSET_PX.right - badge.offsetWidth}px`;
-    badge.style.top = `${rect.bottom - BADGE_INSET_PX.bottom - badge.offsetHeight}px`;
+    return undefined;
+  }
+
+  function isWhollyUncovered(left: number, top: number, width: number, height: number): boolean {
+    const right = left + width - 1;
+    const bottom = top + height - 1;
+    return isClear(left + 1, top + 1) && isClear(right, top + 1) && isClear(left + 1, bottom) && isClear(right, bottom);
+  }
+
+  function isClear(x: number, y: number): boolean {
+    const topmost = document.elementsFromPoint(x, y).find((hit) => !hit.closest('[data-type-right-badge], type-right-card'));
+    return !topmost || element.contains(topmost);
+  }
+
+  let frame: number | undefined;
+  function followRead(): void {
+    frame ??= requestAnimationFrame(place);
+  }
+  function sync(): void {
+    placedBoxKey = undefined;
+    followRead();
+  }
+
+  let fadeTimer: ReturnType<typeof setTimeout> | undefined;
+  function fade(): void {
+    badge.style.opacity = TYPING_OPACITY;
+    clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(() => void (badge.style.opacity = IDLE_OPACITY), FADE_BACK_MS);
   }
 
   const listeners = new AbortController();
   const follow = { passive: true, signal: listeners.signal };
-  document.addEventListener('scroll', place, { ...follow, capture: true });
-  window.addEventListener('resize', place, follow);
-  const resizeObserver = new ResizeObserver(place);
+  document.addEventListener('scroll', sync, { ...follow, capture: true });
+  window.addEventListener('resize', sync, follow);
+  element.addEventListener('mousemove', sync, follow);
+  element.addEventListener('focusin', sync, follow);
+  element.addEventListener('input', fade, follow);
+  const resizeObserver = new ResizeObserver(sync);
   resizeObserver.observe(element);
 
   return {
@@ -85,36 +143,15 @@ export function createBadge(element: HTMLElement): Badge {
       badge.textContent = label;
       badge.title = title;
       badge.style.background = color;
-      place();
+      sync();
     },
-    followMove: place,
+    followRead,
     destroy() {
       listeners.abort();
       resizeObserver.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      clearTimeout(fadeTimer);
       badge.remove();
     },
   };
-}
-
-const CLIPPING = new Set(['hidden', 'clip', 'scroll', 'auto']);
-
-function visibleBox(element: HTMLElement): DOMRect | undefined {
-  let { left, top, right, bottom } = element.getBoundingClientRect();
-  if (right <= left || bottom <= top) return undefined;
-  for (let inner: HTMLElement = element, ancestor = element.parentElement; ancestor; inner = ancestor, ancestor = ancestor.parentElement) {
-    if (ancestor === document.body || ancestor === document.documentElement) break;
-    if (getComputedStyle(inner).position === 'fixed') break;
-    const { overflowX, overflowY } = getComputedStyle(ancestor);
-    if (!CLIPPING.has(overflowX) && !CLIPPING.has(overflowY)) continue;
-    const clip = ancestor.getBoundingClientRect();
-    left = Math.max(left, clip.left);
-    top = Math.max(top, clip.top);
-    right = Math.min(right, clip.right);
-    bottom = Math.min(bottom, clip.bottom);
-  }
-  left = Math.max(left, 0);
-  top = Math.max(top, 0);
-  right = Math.min(right, window.innerWidth);
-  bottom = Math.min(bottom, window.innerHeight);
-  return right > left && bottom > top ? new DOMRect(left, top, right - left, bottom - top) : undefined;
 }

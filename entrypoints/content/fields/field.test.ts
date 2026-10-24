@@ -500,6 +500,23 @@ describe('Apply', () => {
     expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
   });
 
+  it.each(['input', 'beforeinput'])('is inconclusive when the user typed (%s) while the adapter was still replacing, and learns nothing', async (type) => {
+    const ctx = await setupWithSlip();
+    let finishReplace: (outcome: ReplaceOutcome) => void = () => undefined;
+    ctx.page.replace.mockImplementationOnce(() => new Promise<ReplaceOutcome>((resolve) => (finishReplace = resolve)));
+
+    const result = ctx.target.apply(ctx.slip, 'recieve', 'receive');
+    const typed = new InputEvent(type, { bubbles: true });
+    Object.defineProperty(typed, 'isTrusted', { value: true });
+    ctx.page.element.dispatchEvent(typed);
+    ctx.page.deliver('I  it.');
+    finishReplace('attempted');
+    await vi.advanceTimersByTimeAsync(APPLY_VERDICT_MS);
+
+    await expect(result).resolves.toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
   it('is inconclusive when a composition started during the wait', async () => {
     const ctx = await setupWithSlip();
     ctx.page.replace.mockResolvedValueOnce('attempted');

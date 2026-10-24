@@ -91,11 +91,15 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     async apply(slip, flagged, suggestion) {
       const before = latest?.text;
       if (before === undefined || before.slice(slip.start, slip.end) !== flagged) return 'stale';
+      const typing = watchForTyping();
       const outcome = await adapter.replace(slip, flagged, suggestion);
-      if (outcome === 'stale') return 'stale';
-      if (outcome === 'replaced') return 'accepted';
+      if (outcome !== 'attempted') {
+        typing.stop();
+        return outcome === 'stale' ? 'stale' : 'accepted';
+      }
 
-      const interfered = await userTypedBeforeVerdict();
+      await new Promise((resolve) => setTimeout(resolve, APPLY_VERDICT_MS));
+      const interfered = typing.stop();
       if (interfered || signal.aborted || !latest) return 'inconclusive';
       const expected = before.slice(0, slip.start) + suggestion + before.slice(slip.end);
       if (latest.text === expected) return 'accepted';
@@ -109,17 +113,20 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   };
 
   let interference: { happened: boolean } | undefined;
-  async function userTypedBeforeVerdict(): Promise<boolean> {
+  function watchForTyping(): { stop(): boolean } {
     const watching = { happened: false };
     const waiting = new AbortController();
     const note = () => void (watching.happened = true);
     interference = watching;
-    element.addEventListener('input', (event) => event.isTrusted && note(), { signal: waiting.signal });
+    for (const type of ['beforeinput', 'input']) element.addEventListener(type, (event) => event.isTrusted && note(), { signal: waiting.signal });
     element.addEventListener('compositionstart', note, { signal: waiting.signal });
-    await new Promise((resolve) => setTimeout(resolve, APPLY_VERDICT_MS));
-    waiting.abort();
-    interference = undefined;
-    return watching.happened;
+    return {
+      stop() {
+        waiting.abort();
+        interference = undefined;
+        return watching.happened;
+      },
+    };
   }
 
   let frame: number | undefined;

@@ -295,6 +295,15 @@ describe('the Hover card after Apply', () => {
     expect(cardRoot.querySelector('.explanation')!.textContent).toBe('Spelling mistake');
   });
 
+  it('keeps the note open after the Field drops the Slip the botched edit removed', async () => {
+    const field = createTarget();
+    await applyOn(field, 'changedWrongly');
+
+    hover.keepOnly(field, []);
+
+    expect(cardIsOpen()).toBe(true);
+  });
+
   it.each(['accepted', 'inconclusive', 'stale'] as const)('stays closed when the result is %s', async (result) => {
     const field = createTarget();
 

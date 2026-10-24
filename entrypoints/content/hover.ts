@@ -40,6 +40,8 @@ interface Pending extends Pointed {
 interface Shown extends Pointed {
   hoveredLine: DOMRect;
   wordsWithLine: DOMRect | undefined;
+  /** Why an Apply failed. Such a card tells about an edit that may have removed its Slip, so it outlives the Slip. */
+  note: string | undefined;
 }
 
 /**
@@ -108,7 +110,7 @@ export class HoverController {
     const gone = (held: Pointed | null) =>
       held?.target === target && !slips.some((slip) => isSame(held, target, slip));
     if (gone(this.pending)) this.cancelPending();
-    if (gone(this.shown)) this.hide();
+    if (gone(this.shown) && !this.shown?.note) this.hide();
   }
 
   private open(target: HoverTarget, hit: SlipHit, note?: string): void {
@@ -145,7 +147,7 @@ export class HoverController {
       rect,
       target.element,
     );
-    this.shown = { target, slip, hoveredLine: rect, wordsWithLine: target.anchorOf(slip) };
+    this.shown = { target, slip, hoveredLine: rect, wordsWithLine: target.anchorOf(slip), note };
   }
 
   private pageMoved(): void {

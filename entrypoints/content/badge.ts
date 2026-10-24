@@ -92,8 +92,8 @@ export function createBadge(element: HTMLElement): Badge {
     const left = box.right - inset.right - width;
     for (let top = box.bottom - inset.bottom - height; top >= box.top; top -= height) {
       // Corners, not the centre: a sticky footer can cover a badge's bottom edge only.
-      const corners = [[left + 1, top + 1], [left + width - 1, top + 1], [left + 1, top + height - 1], [left + width - 1, top + height - 1]];
-      if (corners.every(([x, y]) => isClear(x!, y!))) return { left, top };
+      const corners: [number, number][] = [[left + 1, top + 1], [left + width - 1, top + 1], [left + 1, top + height - 1], [left + width - 1, top + height - 1]];
+      if (corners.every(([x, y]) => isClear(x, y))) return { left, top };
     }
     return undefined;
   }

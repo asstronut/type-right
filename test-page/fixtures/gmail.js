@@ -19,7 +19,10 @@ const defaultQuote = [
 
 const quoteParagraphs = variant === 'long' ? longParagraphs() : defaultQuote;
 
-const ROOT_HTML = `<div id=":t4" class="Am aiL Al editable LW-avf tS-tW" hidefocus="true" aria-label="Message Body" writingsuggestions="false" g_editable="true" role="textbox" aria-multiline="true" contenteditable="true" tabindex="1" style="direction: ltr; min-height: 225px;" itacorner="6,7:1,1,0,0" spellcheck="false" aria-owns=":vk" aria-controls=":vk" aria-expanded="false"><div><div class="gmail_default" style="font-family: georgia, serif;">\u200b<span style="font-family: Arial, Helvetica, sans-serif; background-color: transparent;">@budi thanks for fixing the bug! I merged your change into \`main\`.</span></div>The build passed on the first try.<br><br>Budi's note was short: "it works on my machine." Let's hope it works everywhere <img data-emoji="✅" class="an1" alt="✅" aria-label="✅" draggable="false" src="${CHECK_EMOJI}" loading="lazy"> See https://example.com/pull/42 if you want to check the diffrence.<br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div dir="ltr"><font face="georgia,serif">Sender Name<br></font></div></div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">On Mon, Oct 19, 2026 at 9:00 AM Budi &lt;<a href="mailto:budi@example.com">budi@example.com</a>&gt; wrote:<br></div><blockquote class="gmail_quote" style="margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex;"><div dir="ltr">${quoteParagraphs.map((paragraph) => `<div>${escapeHtml(paragraph)}</div>`).join('')}</div></blockquote></div></div>`;
+const GHOST_WORD = 'ghozt';
+const SMART_COMPOSE = `<span class="XjviVd yq" contenteditable="false"><span class="bxX nO" aria-live="off" style="color: rgb(117, 117, 117);">r ${GHOST_WORD}</span><span class="by3" style="display: inline-flex;"><span class="by4" spellcheck="false" style="color: rgb(186, 186, 186);">tab</span></span></span>`;
+
+const ROOT_HTML = `<div id=":t4" class="Am aiL Al editable LW-avf tS-tW" hidefocus="true" aria-label="Message Body" writingsuggestions="false" g_editable="true" role="textbox" aria-multiline="true" contenteditable="true" tabindex="1" style="direction: ltr; min-height: 225px;" itacorner="6,7:1,1,0,0" spellcheck="false" aria-owns=":vk" aria-controls=":vk" aria-expanded="false"><div><div class="gmail_default" style="font-family: georgia, serif;">\u200b<span style="font-family: Arial, Helvetica, sans-serif; background-color: transparent;">@budi thanks for fixing the bug! I merged your change into \`main\`.</span></div>The build passed on the first try.<br><br>Budi's note was short: "it works on my machine." Let's hope it works everywhere <img data-emoji="✅" class="an1" alt="✅" aria-label="✅" draggable="false" src="${CHECK_EMOJI}" loading="lazy"> See https://example.com/pull/42 if you want to check the diffrence.${SMART_COMPOSE}<br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div dir="ltr"><font face="georgia,serif">Sender Name<br></font></div></div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">On Mon, Oct 19, 2026 at 9:00 AM Budi &lt;<a href="mailto:budi@example.com">budi@example.com</a>&gt; wrote:<br></div><blockquote class="gmail_quote" style="margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex;"><div dir="ltr">${quoteParagraphs.map((paragraph) => `<div>${escapeHtml(paragraph)}</div>`).join('')}</div></blockquote></div></div>`;
 
 mount.innerHTML = `<div class="aO7"><div class="Ar Au">${ROOT_HTML}</div></div>`;
 
@@ -58,7 +61,8 @@ const typingBlock = () => [...root.children].find((block) => block.textContent.i
 const quote = () => root.querySelector('div.gmail_quote');
 const signaturePrefix = () => root.querySelector('span.gmail_signature_prefix');
 const signature = () => root.querySelector('div.gmail_signature');
-const notChecked = () => [signaturePrefix(), signature(), quote()];
+const smartCompose = () => root.querySelector('span.XjviVd');
+const notChecked = () => [signaturePrefix(), signature(), quote(), smartCompose()];
 
 function seeds() {
   const quoted = quote();
@@ -72,6 +76,11 @@ function seeds() {
       'quoted history',
       quoted?.querySelector(':scope > div.gmail_attr + blockquote.gmail_quote')?.textContent.includes(variant === 'long' ? 'recieve' : 'adress') && quoted.querySelector('div.gmail_attr')?.textContent.startsWith('On Mon, Oct 19, 2026'),
       'div.gmail_quote > div.gmail_attr + blockquote.gmail_quote',
+    ),
+    check(
+      'Smart Compose ghost text',
+      smartCompose()?.getAttribute('contenteditable') === 'false' && smartCompose().querySelector('span.bxX.nO[aria-live="off"]')?.textContent.includes(GHOST_WORD) && smartCompose().querySelector('span.by3 > span.by4[spellcheck="false"]')?.textContent === 'tab' && typingBlock()?.contains(smartCompose()),
+      'span.XjviVd[contenteditable=false] in the typing block',
     ),
     check(
       'typing block before the signature',
@@ -132,6 +141,7 @@ expose({
   seeds,
   typingBlock,
   notChecked,
+  ghostWord: GHOST_WORD,
   neverFlag: () => [...root.querySelectorAll('img[data-emoji]')],
   decoys: () => [
     { name: 'hidden textarea#:ta', element: hiddenTextarea, poke: 'none' },

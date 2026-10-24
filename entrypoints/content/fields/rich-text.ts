@@ -17,6 +17,7 @@ export interface RegionRules {
   notChecked: readonly string[];
   trailing: readonly string[];
   neverFlag: readonly string[];
+  skip: readonly string[];
 }
 
 export const REGION_RULES: RegionRules = {
@@ -24,12 +25,15 @@ export const REGION_RULES: RegionRules = {
   // #73: regions the editor appends after the typed text. Also not checked, and they add no line at the end.
   trailing: ['.gmail_signature', '.gmail_signature_prefix', '.gmail_quote'],
   neverFlag: ['code', 'ts-mention', '[data-type="mention"]', '[contenteditable="false"]', 'img.emoji', 'img[data-emoji]'],
+  // #73: Gmail's Smart Compose suggestion sits inline in the caret's line. It is left out of the text entirely.
+  skip: ['span.XjviVd[contenteditable="false"]'],
 };
 
 interface Regions {
   notChecked: string;
   trailing: string;
   neverFlag: string;
+  skip: string;
 }
 
 type Blocks = WeakMap<Element, Line[]>;
@@ -39,6 +43,7 @@ export function createRichTextReader(host: HTMLElement, regionRules: RegionRules
     notChecked: [...regionRules.notChecked, ...regionRules.trailing].join(','),
     trailing: regionRules.trailing.join(','),
     neverFlag: regionRules.neverFlag.join(','),
+    skip: regionRules.skip.join(','),
   };
   const blocks: Blocks = new WeakMap();
   return {
@@ -91,7 +96,8 @@ function classify(element: Element, regions: Regions): Role {
     element.hasAttribute('hidden') ||
     element.getAttribute('aria-hidden') === 'true' ||
     element.hasAttribute('data-slate-placeholder') ||
-    (element instanceof HTMLElement && element.style.display === 'none')
+    (element instanceof HTMLElement && element.style.display === 'none') ||
+    matches(element, regions.skip)
   ) {
     return 'skip';
   }

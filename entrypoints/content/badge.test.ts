@@ -24,7 +24,6 @@ function elementWith(box: DOMRect, tag: 'textarea' | 'div' = 'textarea'): { elem
   return { element, moveTo: (next) => void measure.mockReturnValue(next) };
 }
 
-/** Has `cover` sit over the page below `top`, and the element above it. */
 function coverBelow(element: HTMLElement, top: number): HTMLElement {
   const cover = document.body.appendChild(document.createElement('footer'));
   vi.spyOn(document, 'elementsFromPoint').mockImplementation((_x, y) => [badgeElement(), y >= top ? cover : element]);

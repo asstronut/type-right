@@ -38,9 +38,7 @@ interface Pending extends Pointed {
 }
 
 interface Shown extends Pointed {
-  /** The underlined line the card is placed against, which can be one line of a wrapped Slip. */
   line: DOMRect;
-  /** Where the Slip's words were when `line` was measured, so the line moves as they do. */
   words: DOMRect | undefined;
 }
 
@@ -150,7 +148,6 @@ export class HoverController {
     this.shown = { target, slip, line: rect, words: target.anchorOf(slip) };
   }
 
-  /** The pointer was on the words when they moved, so a card about to open would open where they were. */
   private followSoon(): void {
     this.cancelPending();
     this.frame ??= requestAnimationFrame(() => {

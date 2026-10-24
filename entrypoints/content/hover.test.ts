@@ -22,7 +22,6 @@ function spellingSlip(word: string, start = 0): Slip {
   };
 }
 
-/** The second line of a Slip wrapped over two. */
 const LINE = new DOMRect(10, 66, 40, 16);
 const WORDS = new DOMRect(10, 50, 40, 32);
 

@@ -11,7 +11,6 @@ export function raise(popover: HTMLElement, near: Element): void {
   if (!popover.matches(':popover-open')) popover.showPopover();
 }
 
-/** Hides `popover`. The inline `display` matters for the Hover card, whose inline `all: initial` beats the browser's own `display: none` for a closed popover. */
 export function lower(popover: HTMLElement): void {
   if (popover.matches(':popover-open')) popover.hidePopover();
   popover.style.display = 'none';

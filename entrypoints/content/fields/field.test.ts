@@ -60,10 +60,12 @@ function createFakeAdapter() {
 function createFakeUnderlines() {
   const drawn = new Map<object, DrawnSlip[]>();
   let hit: SlipHit | undefined;
+  let words: DOMRect | undefined;
   const hitAt = vi.fn((_owner: object, _x: number, _y: number) => hit);
   const underlines: Underlines = {
     draw: (owner, next) => void drawn.set(owner, next),
     hitAt,
+    boundsOf: (owner, slip) => (drawn.get(owner)?.some((drawnSlip) => drawnSlip.slip.id === slip.id) ? words : undefined),
     forget: (owner) => void drawn.delete(owner),
     dispose: () => drawn.clear(),
   };
@@ -73,6 +75,9 @@ function createFakeUnderlines() {
     drawn: () => [...drawn.values()][0],
     pointerRestsOn(next: SlipHit | undefined) {
       hit = next;
+    },
+    wordsAt(next: DOMRect) {
+      words = next;
     },
   };
 }
@@ -384,6 +389,22 @@ describe('the Hover card', () => {
 
     void target.apply(slip, flagged, 'receive');
     expect(page.replace).toHaveBeenCalledWith(slip, 'recieve', 'receive');
+  });
+
+  it("anchors the card on the Slip's words while they show, and on nothing once they scroll out of what shows of the Field", async () => {
+    const page = setup();
+    vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 300, 80));
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const slip = page.drawn()![0]!.slip;
+    await page.pointAt(slip);
+    const target = page.hoverTarget();
+    const shown = new DOMRect(20, 120, 50, 16);
+
+    page.wordsAt(shown);
+    expect(target.anchorOf(slip)).toBe(shown);
+    page.wordsAt(new DOMRect(20, 70, 50, 16));
+    expect(target.anchorOf(slip)).toBeUndefined();
   });
 
   it('adds a word to the Dictionary', async () => {

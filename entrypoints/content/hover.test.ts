@@ -7,6 +7,7 @@ import { makeSlipId, type Slip } from '../../lib/slips';
 
 const OPEN_MS = 300;
 const CLOSE_MS = 250;
+const FRAME_MS = 20;
 
 function spellingSlip(word: string, start = 0): Slip {
   return {
@@ -21,12 +22,18 @@ function spellingSlip(word: string, start = 0): Slip {
   };
 }
 
+/** The second line of a Slip wrapped over two. */
+const LINE = new DOMRect(10, 66, 40, 16);
+const WORDS = new DOMRect(10, 50, 40, 32);
+
 function hitOn(slip: Slip): SlipHit {
-  return { slip, rect: new DOMRect(10, 10, 40, 16) };
+  return { slip, rect: LINE };
 }
 
 function createTarget() {
   return {
+    element: document.body,
+    anchorOf: vi.fn((_slip: Slip): DOMRect | undefined => WORDS),
     textOf: vi.fn((slip: Slip) => `text of ${slip.id}`),
     canApply: () => true,
     apply: vi.fn(async (): Promise<ApplyResult> => 'accepted'),
@@ -38,6 +45,12 @@ function createTarget() {
 function cardIsOpen(): boolean {
   return document.querySelector<HTMLElement>('type-right-card')?.style.display === 'block';
 }
+
+function cardTop(): number {
+  return parseFloat(document.querySelector<HTMLElement>('type-right-card')!.style.top);
+}
+
+const nextFrame = () => vi.advanceTimersByTimeAsync(FRAME_MS);
 
 let hover: HoverController;
 let cardRoot: ShadowRoot;
@@ -163,17 +176,68 @@ describe('the Hover card', () => {
     expect(cardIsOpen()).toBe(true);
   });
 
-  it('closes when asked to, and when the page scrolls', async () => {
+  it('closes when asked to', async () => {
     const field = createTarget();
     hover.point(field, hitOn(spellingSlip('recieve')));
     await vi.advanceTimersByTimeAsync(OPEN_MS);
-    hover.close();
-    expect(cardIsOpen()).toBe(false);
 
+    hover.close();
+
+    expect(cardIsOpen()).toBe(false);
+  });
+
+  it('stays where it is while something else on the page scrolls', async () => {
+    const field = createTarget();
     hover.point(field, hitOn(spellingSlip('recieve')));
     await vi.advanceTimersByTimeAsync(OPEN_MS);
+    const top = cardTop();
+
     document.body.dispatchEvent(new Event('scroll'));
+    window.dispatchEvent(new Event('resize'));
+    await nextFrame();
+
+    expect(cardIsOpen()).toBe(true);
+    expect(cardTop()).toBe(top);
+  });
+
+  it('follows its words as they scroll, keeping to the line it opened on, measuring them once per frame', async () => {
+    const field = createTarget();
+    hover.point(field, hitOn(spellingSlip('recieve')));
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+    const top = cardTop();
+    field.anchorOf.mockClear();
+
+    field.anchorOf.mockReturnValue(new DOMRect(WORDS.x, WORDS.y - 30, WORDS.width, WORDS.height));
+    document.body.dispatchEvent(new Event('scroll'));
+    document.body.dispatchEvent(new Event('scroll'));
+    await nextFrame();
+
+    expect(field.anchorOf).toHaveBeenCalledOnce();
+    expect(cardTop()).toBe(top - 30);
+  });
+
+  it('closes once its words scroll out of what shows of the Field', async () => {
+    const field = createTarget();
+    hover.point(field, hitOn(spellingSlip('recieve')));
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+
+    field.anchorOf.mockReturnValue(undefined);
+    document.body.dispatchEvent(new Event('scroll'));
+    await nextFrame();
+
     expect(cardIsOpen()).toBe(false);
+  });
+
+  it('ignores a scroll inside the card', async () => {
+    const field = createTarget();
+    hover.point(field, hitOn(spellingSlip('recieve')));
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+
+    field.anchorOf.mockReturnValue(undefined);
+    document.querySelector('type-right-card')!.dispatchEvent(new Event('scroll'));
+    await nextFrame();
+
+    expect(cardIsOpen()).toBe(true);
   });
 });
 

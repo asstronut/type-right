@@ -1,6 +1,7 @@
 import { createBadge } from '../badge';
 import type { HoverController, HoverTarget } from '../hover';
 import { UNDERLINE_REACH_PX, type Underlines } from '../underlines';
+import { visibleBox } from '../visible-box';
 import { createFieldChecker, type CheckEngines, type CheckSite } from '../../../lib/checker';
 import type { LlmHealth, PageLlmHealth } from '../../../lib/llm-health';
 import type { TextSpan } from '../../../lib/slip-tracker';
@@ -90,6 +91,12 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   }
 
   const target: HoverTarget = {
+    element,
+    anchorOf(slip) {
+      const words = underlines.boundsOf(field, slip);
+      const box = visibleBox(element);
+      return words && box && overlaps(words, box) ? words : undefined;
+    },
     textOf: (slip) => latest?.text.slice(slip.start, slip.end) ?? '',
     canApply: (slip) => adapter.canApply(slip),
     async apply(slip, flagged, suggestion) {
@@ -199,6 +206,10 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   }, signal);
 
   return field;
+}
+
+function overlaps(a: DOMRect, b: DOMRect): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
 
 /** Pointer coordinates are whole pixels, so a box edge between two pixels counts from the pixel it falls in. */

@@ -42,7 +42,7 @@ export interface FieldDeps {
   site: CheckSite;
   llmHealth: PageLlmHealth;
   underlines: Underlines;
-  hover: Pick<HoverController, 'point' | 'closeFor' | 'close'>;
+  hover: Pick<HoverController, 'point' | 'closeFor' | 'keepOnly' | 'close'>;
   addToDictionary(word: string): void;
   onSlipsSeen(sightings: SlipSighting[]): void;
   /** Asked on every read: true once the extension reloaded, and the read is dropped. */
@@ -88,6 +88,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     hasUnderlines = slips.length > 0;
     underlines.draw(field, slips.map((slip) => ({ slip, range: rangeFor(slip) })));
     badge.followMove();
+    hover.keepOnly(target, slips);
   }
 
   const target: HoverTarget = {

@@ -105,6 +105,14 @@ export class HoverController {
     if (this.shown?.target === target) this.hide();
   }
 
+  /** Closes `target`'s card, or cancels its pending open, when its Slip is not among `slips`. */
+  keepOnly(target: HoverTarget, slips: readonly Slip[]): void {
+    const gone = (held: Pointed | null) =>
+      held?.target === target && !slips.some((slip) => isSame(held, target, slip));
+    if (gone(this.pending)) this.cancelPending();
+    if (gone(this.shown)) this.hide();
+  }
+
   private open(target: HoverTarget, hit: SlipHit, note?: string): void {
     const { slip, rect } = hit;
     this.cancelClose();

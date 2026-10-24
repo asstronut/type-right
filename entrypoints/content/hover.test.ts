@@ -139,6 +139,34 @@ describe('the Hover card', () => {
     expect(cardIsOpen()).toBe(false);
   });
 
+  it('closes when its Slip is no longer among its Field\'s Slips, and stays open while it is', async () => {
+    const field = createTarget();
+    const slip = spellingSlip('recieve');
+    hover.point(field, hitOn(slip));
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+
+    hover.keepOnly(field, [{ ...slip }, spellingSlip('wich', 20)]);
+    expect(cardIsOpen()).toBe(true);
+
+    hover.keepOnly(field, [spellingSlip('wich', 20), spellingSlip('recieve', 5)]);
+    expect(cardIsOpen()).toBe(false);
+  });
+
+  it("doesn't let another Field's Slips close or cancel this one", async () => {
+    const [first, second] = [createTarget(), createTarget()];
+    hover.point(second, hitOn(spellingSlip('recieve')));
+    await vi.advanceTimersByTimeAsync(OPEN_MS - 1);
+
+    hover.keepOnly(second, []);
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+    expect(cardIsOpen()).toBe(false);
+
+    hover.point(second, hitOn(spellingSlip('recieve')));
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+    hover.keepOnly(first, []);
+    expect(cardIsOpen()).toBe(true);
+  });
+
   it("doesn't open a card whose Field changed while the pointer rested", async () => {
     const field = createTarget();
     hover.point(field, hitOn(spellingSlip('recieve')));

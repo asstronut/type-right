@@ -88,6 +88,7 @@ function setup({ settings = DEFAULT_SETTINGS }: { settings?: Settings } = {}) {
   const hover = {
     point: vi.fn<(target: HoverTarget, hit: SlipHit | undefined) => void>(),
     closeFor: vi.fn<(target: HoverTarget) => void>(),
+    keepOnly: vi.fn<(target: HoverTarget, slips: readonly Slip[]) => void>(),
     close: vi.fn<() => void>(),
   };
   const languageTool = vi.fn(checkSpelling);
@@ -375,6 +376,17 @@ describe('the Hover card', () => {
 
     page.deliver(`${TEXT} More.`);
     expect(page.hover.closeFor).toHaveBeenCalledWith(target);
+  });
+
+  it('tells the Hover card which Slips the Field has after every check result', async () => {
+    const page = setup();
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await page.pointAt(page.drawn()![0]!.slip);
+    const target = page.hoverTarget();
+
+    expect(page.hover.keepOnly).toHaveBeenLastCalledWith(target, page.drawn()!.map(({ slip }) => slip));
+    expect(page.drawn()).not.toHaveLength(0);
   });
 
   it('hands the adapter the words the card was opened on, so it can refuse a fix once they changed', async () => {

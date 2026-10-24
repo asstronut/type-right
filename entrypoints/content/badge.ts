@@ -45,7 +45,7 @@ interface Spot {
 
 export interface Badge {
   setLlmHealth(health: LlmHealth): void;
-  followMove(): void;
+  followRead(): void;
   destroy(): void;
 }
 
@@ -77,9 +77,13 @@ export function createBadge(element: HTMLElement): Badge {
   document.documentElement.appendChild(badge);
   const inset = element instanceof HTMLTextAreaElement ? TEXTAREA_INSET_PX : RICH_EDITOR_INSET_PX;
 
+  let placedBoxKey: string | undefined;
   function place(): void {
     frame = undefined;
     const box = badge.textContent ? visibleBox(element) : undefined;
+    const boxKey = box && `${box.left},${box.top},${box.right},${box.bottom}`;
+    if (boxKey !== undefined && boxKey === placedBoxKey) return;
+    placedBoxKey = boxKey;
     if (!box) return lower(badge);
     raise(badge, element);
     const spot = clearSpotIn(box, badge.offsetWidth, badge.offsetHeight);
@@ -108,8 +112,12 @@ export function createBadge(element: HTMLElement): Badge {
   }
 
   let frame: number | undefined;
-  function sync(): void {
+  function followRead(): void {
     frame ??= requestAnimationFrame(place);
+  }
+  function sync(): void {
+    placedBoxKey = undefined;
+    followRead();
   }
 
   let fadeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -137,7 +145,7 @@ export function createBadge(element: HTMLElement): Badge {
       badge.style.background = color;
       sync();
     },
-    followMove: sync,
+    followRead,
     destroy() {
       listeners.abort();
       resizeObserver.disconnect();

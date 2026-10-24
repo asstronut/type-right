@@ -140,6 +140,29 @@ describe('the LLM badge', () => {
     expect(measure).toHaveBeenCalledOnce();
   });
 
+  it('looks for covering site UI again on a Field read only once the element has moved', async () => {
+    const { element, moveTo } = elementWith(BOX);
+    const badge = createBadge(element);
+    badge.setLlmHealth({ state: 'active' });
+    await nextFrame();
+    const hitTest = vi.spyOn(document, 'elementsFromPoint').mockReturnValue([element]);
+
+    badge.followRead();
+    await nextFrame();
+    expect(hitTest).not.toHaveBeenCalled();
+
+    element.dispatchEvent(new Event('mousemove'));
+    await nextFrame();
+    expect(hitTest).toHaveBeenCalled();
+
+    hitTest.mockClear();
+    moveTo(new DOMRect(BOX.x, BOX.y - 50, BOX.width, BOX.height));
+    badge.followRead();
+    await nextFrame();
+    expect(hitTest).toHaveBeenCalled();
+    expect(badgeElement().style.top).toBe(`${BOX.bottom - 50 - 4 - BADGE_HEIGHT}px`);
+  });
+
   it('is hidden while nothing of the element shows or it has left the page', async () => {
     const { element, moveTo } = elementWith(new DOMRect());
     createBadge(element).setLlmHealth({ state: 'active' });

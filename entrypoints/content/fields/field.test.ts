@@ -219,10 +219,11 @@ describe('checking what is read', () => {
 });
 
 describe('the badge', () => {
-  it('follows an element that moved without a scroll or resize once the Field is read again', () => {
+  it('follows an element that moved without a scroll or resize once the Field is read again', async () => {
     const page = setup();
     const measure = vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 200, 300, 80));
     page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
     const badge = document.querySelector<HTMLElement>('[data-type-right-badge]')!;
     const top = () => parseFloat(badge.style.top);
     expect(top()).toBeGreaterThan(200);
@@ -230,6 +231,7 @@ describe('the badge', () => {
     measure.mockReturnValue(new DOMRect(0, 114, 300, 80));
     const before = top();
     page.deliver(`${TEXT} More.`);
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
 
     expect(top()).toBe(before - 86);
   });
@@ -306,6 +308,7 @@ describe('the Hover card', () => {
     const measure = vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 50));
     page.deliver('All good.');
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
     measure.mockClear();
 
     document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 54, bubbles: true }));

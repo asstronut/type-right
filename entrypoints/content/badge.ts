@@ -1,5 +1,6 @@
 import type { LlmFailure } from '../../lib/engine';
 import type { LlmHealth } from '../../lib/llm-health';
+import { lower, raise } from './top-layer';
 import { visibleBox } from './visible-box';
 
 const LT_STILL_WORKS = 'LanguageTool underlines keep working.';
@@ -30,8 +31,17 @@ function badgeFor(health: LlmHealth): { label: string; color: string; title: str
   }
 }
 
-/** Keeps the badge clear of the textarea's resize grip in the bottom-right corner. */
-const BADGE_INSET_PX = { right: 18, bottom: 4 };
+/** From the visible box's bottom-right corner; a textarea's is wider to keep clear of its resize grip. */
+const TEXTAREA_INSET_PX = { right: 18, bottom: 4 };
+const RICH_EDITOR_INSET_PX = { right: 4, bottom: 4 };
+const IDLE_OPACITY = '0.85';
+const TYPING_OPACITY = '0.25';
+const FADE_BACK_MS = 1500;
+
+interface Spot {
+  left: number;
+  top: number;
+}
 
 export interface Badge {
   setLlmHealth(health: LlmHealth): void;
@@ -40,44 +50,77 @@ export interface Badge {
 }
 
 /**
- * Says in a corner of `element` whether the Field's text goes to the LLM;
- * hovering it tells why. It follows the element when the page scrolls or the
- * element is resized, and hides while the element is removed or has no box.
+ * Says in the bottom-right corner of what shows of `element` whether the
+ * Field's text goes to the LLM; hovering it tells why. It moves up the right
+ * edge while site UI covers that corner, hides when no spot is clear or
+ * nothing of the element shows, and fades while the user types.
  */
 export function createBadge(element: HTMLElement): Badge {
   const badge = document.createElement('div');
   badge.setAttribute('data-type-right-badge', '');
+  badge.popover = 'manual';
   Object.assign(badge.style, {
     position: 'fixed',
+    inset: 'auto',
+    margin: '0',
+    border: '0',
+    overflow: 'visible',
     display: 'none',
     padding: '1px 5px',
     borderRadius: '8px',
     font: '600 10px/14px system-ui, sans-serif',
     color: '#fff',
-    opacity: '0.85',
+    opacity: IDLE_OPACITY,
     cursor: 'default',
     userSelect: 'none',
-    zIndex: '2147483647',
   });
   document.documentElement.appendChild(badge);
+  const inset = element instanceof HTMLTextAreaElement ? TEXTAREA_INSET_PX : RICH_EDITOR_INSET_PX;
 
   function place(): void {
-    if (!badge.textContent) return;
-    const rect = visibleBox(element);
-    if (!element.isConnected || !rect) {
-      badge.style.display = 'none';
-      return;
+    frame = undefined;
+    const box = badge.textContent ? visibleBox(element) : undefined;
+    if (!box) return lower(badge);
+    raise(badge, element);
+    const spot = clearSpotIn(box, badge.offsetWidth, badge.offsetHeight);
+    if (!spot) return lower(badge);
+    badge.style.left = `${spot.left}px`;
+    badge.style.top = `${spot.top}px`;
+  }
+
+  function clearSpotIn(box: DOMRect, width: number, height: number): Spot | undefined {
+    const left = box.right - inset.right - width;
+    for (let top = box.bottom - inset.bottom - height; top >= box.top; top -= height) {
+      if (isClear(left + width / 2, top + height / 2)) return { left, top };
     }
-    badge.style.display = 'block';
-    badge.style.left = `${rect.right - BADGE_INSET_PX.right - badge.offsetWidth}px`;
-    badge.style.top = `${rect.bottom - BADGE_INSET_PX.bottom - badge.offsetHeight}px`;
+    return undefined;
+  }
+
+  function isClear(x: number, y: number): boolean {
+    const topmost = document.elementsFromPoint(x, y).find((hit) => !hit.closest('[data-type-right-badge], type-right-card'));
+    return !topmost || element.contains(topmost);
+  }
+
+  let frame: number | undefined;
+  function sync(): void {
+    frame ??= requestAnimationFrame(place);
+  }
+
+  let fadeTimer: ReturnType<typeof setTimeout> | undefined;
+  function fade(): void {
+    badge.style.opacity = TYPING_OPACITY;
+    clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(() => void (badge.style.opacity = IDLE_OPACITY), FADE_BACK_MS);
   }
 
   const listeners = new AbortController();
   const follow = { passive: true, signal: listeners.signal };
-  document.addEventListener('scroll', place, { ...follow, capture: true });
-  window.addEventListener('resize', place, follow);
-  const resizeObserver = new ResizeObserver(place);
+  document.addEventListener('scroll', sync, { ...follow, capture: true });
+  window.addEventListener('resize', sync, follow);
+  element.addEventListener('mousemove', sync, follow);
+  element.addEventListener('focusin', sync, follow);
+  element.addEventListener('input', fade, follow);
+  const resizeObserver = new ResizeObserver(sync);
   resizeObserver.observe(element);
 
   return {
@@ -86,12 +129,14 @@ export function createBadge(element: HTMLElement): Badge {
       badge.textContent = label;
       badge.title = title;
       badge.style.background = color;
-      place();
+      sync();
     },
-    followMove: place,
+    followMove: sync,
     destroy() {
       listeners.abort();
       resizeObserver.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      clearTimeout(fadeTimer);
       badge.remove();
     },
   };

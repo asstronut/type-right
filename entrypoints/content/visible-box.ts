@@ -5,6 +5,7 @@ const CLIPPING = new Set(['hidden', 'clip', 'scroll', 'auto']);
  * ancestor and the viewport, or `undefined` when nothing of it shows.
  */
 export function visibleBox(element: HTMLElement): DOMRect | undefined {
+  if (!element.isConnected || element.hidden || !element.checkVisibility()) return undefined;
   let { left, top, right, bottom } = element.getBoundingClientRect();
   if (right <= left || bottom <= top) return undefined;
   for (let inner: HTMLElement = element, ancestor = element.parentElement; ancestor; inner = ancestor, ancestor = ancestor.parentElement) {

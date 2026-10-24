@@ -106,6 +106,7 @@ export function runPage(options: PageOptions): void {
   });
 
   const hover = new HoverController();
+  let applyRefusedOnPage = false;
   /** Set while Type Right is running on this page. */
   let running: Running | null = null;
 
@@ -124,6 +125,9 @@ export function runPage(options: PageOptions): void {
         void options.recordSlips(sightings).catch(noticeReload);
       },
       noticeReload,
+      onApplyRefused: () => {
+        applyRefusedOnPage = true;
+      },
     };
 
     function attach(textarea: HTMLTextAreaElement): void {
@@ -133,7 +137,7 @@ export function runPage(options: PageOptions): void {
 
     function attachRichEditor(host: HTMLElement | null): void {
       if (!host || fields.has(host) || !canBeRichField(host)) return;
-      fields.set(host, createField(richEditorAdapter(host), deps));
+      fields.set(host, createField(richEditorAdapter(host, () => applyRefusedOnPage), deps));
     }
 
     function attachAllWithin(root: ParentNode): void {

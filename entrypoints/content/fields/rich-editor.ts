@@ -1,6 +1,7 @@
-import type { FieldAdapter } from './field';
+import type { FieldAdapter, FieldRead } from './field';
 import { isHidden } from './hidden';
 import { createRichTextReader } from './rich-text';
+import type { Slip } from '../../../lib/slips';
 
 export function editingHostOf(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element) || target instanceof HTMLTextAreaElement) return null;
@@ -19,29 +20,95 @@ export function canBeRichField(host: HTMLElement): boolean {
   return !isHidden(host);
 }
 
-export function richEditorAdapter(host: HTMLElement): FieldAdapter {
+/** Editors sync their own selection on `selectionchange`; one frame is the longest Apply waits for it. */
+function nextSelectionChangeOrFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      document.removeEventListener('selectionchange', done);
+      cancelAnimationFrame(frame);
+      resolve();
+    };
+    const frame = requestAnimationFrame(done);
+    document.addEventListener('selectionchange', done);
+  });
+}
+
+export function richEditorAdapter(host: HTMLElement, applyRefused: () => boolean): FieldAdapter {
   const reader = createRichTextReader(host);
+  let onRead: ((read: FieldRead) => void) | undefined;
+  let composing = false;
+  let latest: FieldRead | undefined;
+  let observer: MutationObserver | undefined;
+
+  function deliver(changes: readonly MutationRecord[]): FieldRead | undefined {
+    if (!onRead) return undefined;
+    latest = { ...reader.read(changes), composing };
+    onRead(latest);
+    return latest;
+  }
+
+  function inOneTextNode(read: FieldRead, slip: Slip): StaticRange | undefined {
+    const range = read.rangeFor(slip);
+    const { startContainer, endContainer } = range;
+    if (range.collapsed || startContainer !== endContainer || !(startContainer instanceof Text)) return undefined;
+    return range as StaticRange;
+  }
 
   return {
     element: host,
 
-    watch(onRead, signal) {
-      let composing = false;
-      const deliver = (changes: readonly MutationRecord[]) => onRead({ ...reader.read(changes), composing });
+    watch(callback, signal) {
+      onRead = callback;
       // Every batch is read again even when the text is the same: editors re-render nodes with identical text, which strands the ranges on the old nodes.
-      const observer = new MutationObserver(deliver);
+      const watching = new MutationObserver(deliver);
+      observer = watching;
       host.addEventListener('compositionstart', () => (composing = true), { signal });
       host.addEventListener('compositionend', () => {
         composing = false;
-        deliver(observer.takeRecords());
+        deliver(watching.takeRecords());
       }, { signal });
       deliver([]);
-      observer.observe(host, { childList: true, characterData: true, subtree: true });
-      signal.addEventListener('abort', () => observer.disconnect(), { once: true });
+      watching.observe(host, { childList: true, characterData: true, subtree: true });
+      signal.addEventListener('abort', () => watching.disconnect(), { once: true });
     },
 
-    canApply: () => false,
+    canApply: (slip) => !applyRefused() && host.isContentEditable && latest !== undefined && inOneTextNode(latest, slip) !== undefined,
 
-    replace: () => Promise.resolve(),
+    async replace(slip, flagged, suggestion) {
+      const read = deliver(observer?.takeRecords() ?? []);
+      const selected = read && host.isContentEditable && read.text.slice(slip.start, slip.end) === flagged ? inOneTextNode(read, slip) : undefined;
+      if (!read || !selected) return 'stale';
+
+      host.focus({ preventScroll: true });
+      const live = document.createRange();
+      live.setStart(selected.startContainer, selected.startOffset);
+      live.setEnd(selected.endContainer, selected.endOffset);
+      const selection = document.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(live);
+      await nextSelectionChangeOrFrame();
+      const afterWait = deliver(observer?.takeRecords() ?? []);
+      const untypedRange = afterWait?.text === read.text ? inOneTextNode(afterWait, slip) : undefined;
+      if (!untypedRange) return 'stale';
+
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', suggestion);
+      const unclaimed = host.dispatchEvent(
+        new InputEvent('beforeinput', {
+          inputType: 'insertReplacementText',
+          data: suggestion,
+          dataTransfer,
+          targetRanges: [untypedRange],
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        }),
+      );
+      if (unclaimed && !host.matches('[data-slate-editor]')) {
+        const fresh = deliver(observer?.takeRecords() ?? []);
+        if (fresh?.text.slice(slip.start, slip.end) === flagged) document.execCommand('insertText', false, suggestion);
+      }
+      return 'attempted';
+    },
   };
 }

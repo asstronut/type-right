@@ -285,7 +285,7 @@ async function readCard(page) {
   });
   const suggestions = [];
   walk(card, (n) => { if (attr(n, 'class') === 'suggestion') suggestions.push(textOf(n)); });
-  return { kind: text('kind'), type: text('type'), explanation: text('explanation'), suggestions, buttons, nodeId: card.nodeId };
+  return { kind: text('kind'), type: text('type'), explanation: text('explanation'), note: text('note'), suggestions, buttons, nodeId: card.nodeId };
 }
 
 function walk(node, fn) {

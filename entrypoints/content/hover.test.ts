@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ApplyResult } from './fields/field';
 import { HoverController, type HoverTarget } from './hover';
 import type { SlipHit } from './underlines';
 import { makeSlipId, type Slip } from '../../lib/slips';
@@ -28,7 +29,7 @@ function createTarget() {
   return {
     textOf: vi.fn((slip: Slip) => `text of ${slip.id}`),
     canApply: () => true,
-    apply: vi.fn(),
+    apply: vi.fn(async (): Promise<ApplyResult> => 'accepted'),
     ignore: vi.fn(),
     addToDictionary: vi.fn(),
   } satisfies HoverTarget;
@@ -39,14 +40,21 @@ function cardIsOpen(): boolean {
 }
 
 let hover: HoverController;
+let cardRoot: ShadowRoot;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  const attachShadow = Element.prototype.attachShadow;
+  vi.spyOn(Element.prototype, 'attachShadow').mockImplementation(function (this: Element, init) {
+    cardRoot = attachShadow.call(this, init);
+    return cardRoot;
+  });
   hover = new HoverController();
 });
 
 afterEach(() => {
   hover.destroy();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -165,6 +173,42 @@ describe('the Hover card', () => {
     hover.point(field, hitOn(spellingSlip('recieve')));
     await vi.advanceTimersByTimeAsync(OPEN_MS);
     document.body.dispatchEvent(new Event('scroll'));
+    expect(cardIsOpen()).toBe(false);
+  });
+});
+
+describe('the Hover card after Apply', () => {
+  async function applyOn(field: ReturnType<typeof createTarget>, result: ApplyResult) {
+    field.apply.mockResolvedValue(result);
+    hover.point(field, hitOn(spellingSlip('recieve')));
+    await vi.advanceTimersByTimeAsync(OPEN_MS);
+    cardRoot.querySelector<HTMLButtonElement>('.show-answer')!.click();
+    cardRoot.querySelector<HTMLButtonElement>('button.apply')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it.each([
+    ['unchanged', "This editor didn't take the fix. Retype it yourself."],
+    ['changedWrongly', 'Apply went wrong here. Press Ctrl+Z to undo it.'],
+  ] as const)('reopens on the same Slip with a note when the result is %s, with the answer shown and no Apply', async (result, note) => {
+    const field = createTarget();
+
+    await applyOn(field, result);
+
+    expect(field.apply).toHaveBeenCalledWith(expect.objectContaining({ id: spellingSlip('recieve').id }), 'text of ' + spellingSlip('recieve').id, 'receive');
+    expect(cardIsOpen()).toBe(true);
+    expect(cardRoot.querySelector('.note')!.textContent).toBe(note);
+    expect(cardRoot.querySelector('.suggestion')!.textContent).toBe('receive');
+    expect(cardRoot.querySelector('.show-answer')).toBeNull();
+    expect(cardRoot.querySelector('button.apply')).toBeNull();
+    expect(cardRoot.querySelector('.explanation')!.textContent).toBe('Spelling mistake');
+  });
+
+  it.each(['accepted', 'inconclusive', 'stale'] as const)('stays closed when the result is %s', async (result) => {
+    const field = createTarget();
+
+    await applyOn(field, result);
+
     expect(cardIsOpen()).toBe(false);
   });
 });

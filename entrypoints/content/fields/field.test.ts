@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createField, type FieldAdapter, type FieldRead } from './field';
+import { APPLY_VERDICT_MS, createField, type FieldAdapter, type FieldRead, type ReplaceOutcome } from './field';
 import type { HoverTarget } from '../hover';
 import type { TextSpan } from '../../../lib/slip-tracker';
 import type { DrawnSlip, SlipHit, Underlines } from '../underlines';
@@ -35,7 +35,7 @@ async function checkSpelling(text: string): Promise<Slip[]> {
 function createFakeAdapter() {
   const element = document.body.appendChild(document.createElement('div'));
   let onRead: ((read: FieldRead) => void) | undefined;
-  const replace = vi.fn(async (_slip: Slip, _flagged: string, _suggestion: string) => undefined);
+  const replace = vi.fn(async (_slip: Slip, _flagged: string, _suggestion: string): Promise<ReplaceOutcome> => 'replaced');
   const adapter: FieldAdapter = {
     element,
     watch: (callback) => void (onRead = callback),
@@ -46,11 +46,11 @@ function createFakeAdapter() {
     adapter,
     element,
     replace,
-    deliver(text: string, neverFlag: TextSpan[] = []) {
+    deliver(text: string, neverFlag: TextSpan[] = [], composing = false) {
       onRead?.({
         text,
         neverFlag,
-        composing: false,
+        composing,
         rangeFor: (span) => ({ startOffset: span.start, endOffset: span.end }) as unknown as AbstractRange,
       });
     },
@@ -89,6 +89,7 @@ function setup({ settings = DEFAULT_SETTINGS }: { settings?: Settings } = {}) {
   const addToDictionary = vi.fn();
   let siteSettings = settings;
   let reloaded = false;
+  const onApplyRefused = vi.fn();
   const field = createField(fake.adapter, {
     engines: { languageTool: { check: languageTool } },
     site: { hostname: HOSTNAME, settings: () => siteSettings },
@@ -98,6 +99,7 @@ function setup({ settings = DEFAULT_SETTINGS }: { settings?: Settings } = {}) {
     addToDictionary,
     onSlipsSeen: vi.fn(),
     noticeReload: () => reloaded,
+    onApplyRefused,
   });
 
   return {
@@ -107,6 +109,7 @@ function setup({ settings = DEFAULT_SETTINGS }: { settings?: Settings } = {}) {
     hover,
     languageTool,
     addToDictionary,
+    onApplyRefused,
     changeSettings: (changes: Partial<Settings>) => void (siteSettings = { ...siteSettings, ...changes }),
     reload: () => void (reloaded = true),
     underlined(text: string) {
@@ -376,7 +379,7 @@ describe('the Hover card', () => {
     const flagged = target.textOf(slip);
     expect(flagged).toBe('recieve');
 
-    target.apply(slip, flagged, 'receive');
+    void target.apply(slip, flagged, 'receive');
     expect(page.replace).toHaveBeenCalledWith(slip, 'recieve', 'receive');
   });
 
@@ -410,3 +413,218 @@ describe('leaving the page', () => {
     expect(page.drawn()).toBeUndefined();
   });
 });
+
+describe('Apply', () => {
+  const FIXED = 'I receive it.';
+
+  async function setupWithSlip() {
+    const page = setup();
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const slip = page.drawn()![0]!.slip;
+    await page.pointAt(slip);
+    return { page, slip, target: page.hoverTarget() };
+  }
+
+  async function applyThrough(
+    ctx: Awaited<ReturnType<typeof setupWithSlip>>,
+    during: () => void = () => undefined,
+  ) {
+    const result = ctx.target.apply(ctx.slip, 'recieve', 'receive');
+    await vi.advanceTimersByTimeAsync(0);
+    during();
+    await vi.advanceTimersByTimeAsync(APPLY_VERDICT_MS);
+    return result;
+  }
+
+  it('is accepted at once when the adapter made the edit for certain, as a textarea does', async () => {
+    const ctx = await setupWithSlip();
+
+    await expect(ctx.target.apply(ctx.slip, 'recieve', 'receive')).resolves.toBe('accepted');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is accepted when the editor kept the attempted edit', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => ctx.page.deliver(FIXED));
+
+    expect(result).toBe('accepted');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is unchanged when the editor ignored the edit, and the page learns the editor refuses fixes', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx);
+
+    expect(result).toBe('unchanged');
+    expect(ctx.page.onApplyRefused).toHaveBeenCalledOnce();
+  });
+
+  it('is changedWrongly when the text became neither the old nor the fixed text, and the page learns it', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => ctx.page.deliver('I receivereceive it.'));
+
+    expect(result).toBe('changedWrongly');
+    expect(ctx.page.onApplyRefused).toHaveBeenCalledOnce();
+  });
+
+  it('judges by the text read after a late edit, not at the moment the adapter returned', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = ctx.target.apply(ctx.slip, 'recieve', 'receive');
+    await vi.advanceTimersByTimeAsync(APPLY_VERDICT_MS - 1);
+    ctx.page.deliver(FIXED);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(result).resolves.toBe('accepted');
+  });
+
+  it('is inconclusive when the user typed during the wait, and learns nothing', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => ctx.page.element.dispatchEvent(trusted(new InputEvent('beforeinput', { bubbles: true }))));
+
+    expect(result).toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['pressed a key the editor handles itself', () => trusted(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))],
+    ['pasted', () => trusted(new Event('paste', { bubbles: true }))],
+    ['dropped something', () => trusted(new Event('drop', { bubbles: true }))],
+    ['cut', () => trusted(new Event('cut', { bubbles: true }))],
+  ])('is inconclusive when the user %s during the wait, and learns nothing', async (_, userEvent) => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => {
+      ctx.page.element.dispatchEvent(userEvent());
+      ctx.page.deliver('I  it.');
+    });
+
+    expect(result).toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is not disturbed by a modifier key pressed alone during the wait', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => {
+      ctx.page.element.dispatchEvent(trusted(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true })));
+      ctx.page.deliver(FIXED);
+    });
+
+    expect(result).toBe('accepted');
+  });
+
+  it('is inconclusive, and learns nothing, when the adapter throws', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockRejectedValueOnce(new DOMException('The offset is larger than the node', 'IndexSizeError'));
+
+    await expect(ctx.target.apply(ctx.slip, 'recieve', 'receive')).resolves.toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['typed', () => trusted(new InputEvent('beforeinput', { bubbles: true }))],
+    ['started composing', () => new CompositionEvent('compositionstart')],
+  ])('is inconclusive when the user %s while the adapter was still replacing, and learns nothing', async (_, userEvent) => {
+    const ctx = await setupWithSlip();
+    let finishReplace: (outcome: ReplaceOutcome) => void = () => undefined;
+    ctx.page.replace.mockImplementationOnce(() => new Promise<ReplaceOutcome>((resolve) => (finishReplace = resolve)));
+
+    const result = ctx.target.apply(ctx.slip, 'recieve', 'receive');
+    ctx.page.element.dispatchEvent(userEvent());
+    ctx.page.deliver('I  it.');
+    finishReplace('attempted');
+    await vi.advanceTimersByTimeAsync(APPLY_VERDICT_MS);
+
+    await expect(result).resolves.toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is inconclusive when a composition started during the wait', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => ctx.page.element.dispatchEvent(new CompositionEvent('compositionstart')));
+
+    expect(result).toBe('inconclusive');
+  });
+
+  it('is inconclusive when a read during the wait says the user is composing', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => ctx.page.deliver(TEXT, [], true));
+
+    expect(result).toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is inconclusive when the Field goes away during the wait', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => ctx.page.field.dispose());
+
+    expect(result).toBe('inconclusive');
+  });
+
+  it('is not disturbed by an input event that did not come from the user', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => {
+      ctx.page.element.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      ctx.page.deliver(FIXED);
+    });
+
+    expect(result).toBe('accepted');
+  });
+
+  it('is accepted when the adapter\'s own edit fires a trusted input, as execCommand does', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockImplementationOnce(async () => {
+      ctx.page.element.dispatchEvent(trusted(new InputEvent('input', { bubbles: true })));
+      ctx.page.deliver(FIXED);
+      return 'attempted';
+    });
+
+    const result = await applyThrough(ctx);
+
+    expect(result).toBe('accepted');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is stale, without asking the adapter, once the Field text no longer holds the flagged words', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.deliver('Nothing here.');
+
+    await expect(ctx.target.apply(ctx.slip, 'recieve', 'receive')).resolves.toBe('stale');
+    expect(ctx.page.replace).not.toHaveBeenCalled();
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is stale when the adapter finds the live text moved on', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('stale');
+
+    await expect(ctx.target.apply(ctx.slip, 'recieve', 'receive')).resolves.toBe('stale');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+});
+
+function trusted<E extends Event>(event: E): E {
+  Object.defineProperty(event, 'isTrusted', { value: true });
+  return event;
+}

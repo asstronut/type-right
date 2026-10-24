@@ -15,7 +15,7 @@ Columns: `ProseMirror` (ChatGPT), `TipTap` (claude.ai, LinkedIn), `Quill` (Slack
 | | `dictionary` | all | `Add to dictionary` removes the range, and the Options page lists the word. The cell then removes the word again with the Options page's Remove button. Each column has its own word. |
 | | `badge` | all | A badge reading `LLM` or `LT only` sits inside the Field's visible box. |
 | | `tally` | all | A finished sentence with a Slip raises the Popup's Spelling count. |
-| | `not-checked` | Rich | The prose gets a range, and no range touches `fixture.notChecked()` (code blocks, quotes, Gmail's signature and quoted history). |
+| | `not-checked` | Rich | The prose gets a range, and no range touches `fixture.notChecked()` (code blocks, quotes, Gmail's signature and quoted history). On Gmail the typing line also holds a Smart Compose ghost span, and no LanguageTool request contains its text. |
 | | `never-flagged` | Rich | No range touches `fixture.neverFlag()` (chips, image emoji, inline code). Every range's text is a stubbed phrase, so no offset drifts. Quill and Gmail: the word after the image emoji has a range exactly on it. |
 | | `apply-undo` | all | After 1.6 s idle, `Show answer` and `Apply receive` give exactly the text with the word replaced. One Ctrl+Z restores the whole text, and the Slip comes back. |
 | Robustness | `rerender-bold` | Rich | After the fixture bolds `recieve` through its library, a live range still covers it. |

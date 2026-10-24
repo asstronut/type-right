@@ -113,7 +113,7 @@ const PAGE_LIB = `(() => {
     block.scrollIntoView({ block: 'nearest' });
     let last = null;
     const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.data.replace(/[\\u200b\\ufeff\\s]/g, '')) last = n;
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.data.replace(/[\\u200b\\ufeff\\s]/g, '') && !n.parentElement.closest('[contenteditable=false]')) last = n;
     if (!last) return box(block.getBoundingClientRect());
     const r = document.createRange();
     r.setStart(last, last.data.length - 1);
@@ -225,6 +225,12 @@ const ROWS = [
     const inside = (await c.highlights()).filter((h) => h.inNotChecked);
     c.note({ inside });
     expect(!inside.length, `Slips in regions that are not checked: ${inside.map((h) => h.text).join(', ')}`);
+    const ghostWord = await c.js('window.fixture.ghostWord ?? null');
+    if (ghostWord) {
+      pre(await c.js('fixture.notChecked().every((e) => e && e.isConnected)'), 'the ghost text is no longer on the page');
+      const sent = c.ltRequests().filter((r) => r.text.includes(ghostWord));
+      expect(!sent.length, `Smart Compose text went to LanguageTool: ${JSON.stringify(sent[0]?.text)}`);
+    }
   }),
   row('never-flagged', 'Parity checklist', RICH, async (c) => {
     await c.typeAtEnd(SLIP);

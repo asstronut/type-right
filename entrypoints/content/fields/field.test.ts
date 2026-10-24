@@ -490,25 +490,22 @@ describe('Apply', () => {
     const ctx = await setupWithSlip();
     ctx.page.replace.mockResolvedValueOnce('attempted');
 
-    const result = await applyThrough(ctx, () => {
-      const typed = new InputEvent('input', { bubbles: true });
-      Object.defineProperty(typed, 'isTrusted', { value: true });
-      ctx.page.element.dispatchEvent(typed);
-    });
+    const result = await applyThrough(ctx, () => ctx.page.element.dispatchEvent(trusted(new InputEvent('beforeinput', { bubbles: true }))));
 
     expect(result).toBe('inconclusive');
     expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
   });
 
-  it.each(['input', 'beforeinput'])('is inconclusive when the user typed (%s) while the adapter was still replacing, and learns nothing', async (type) => {
+  it.each([
+    ['typed', () => trusted(new InputEvent('beforeinput', { bubbles: true }))],
+    ['started composing', () => new CompositionEvent('compositionstart')],
+  ])('is inconclusive when the user %s while the adapter was still replacing, and learns nothing', async (_, userEvent) => {
     const ctx = await setupWithSlip();
     let finishReplace: (outcome: ReplaceOutcome) => void = () => undefined;
     ctx.page.replace.mockImplementationOnce(() => new Promise<ReplaceOutcome>((resolve) => (finishReplace = resolve)));
 
     const result = ctx.target.apply(ctx.slip, 'recieve', 'receive');
-    const typed = new InputEvent(type, { bubbles: true });
-    Object.defineProperty(typed, 'isTrusted', { value: true });
-    ctx.page.element.dispatchEvent(typed);
+    ctx.page.element.dispatchEvent(userEvent());
     ctx.page.deliver('I  it.');
     finishReplace('attempted');
     await vi.advanceTimersByTimeAsync(APPLY_VERDICT_MS);
@@ -557,6 +554,20 @@ describe('Apply', () => {
     expect(result).toBe('accepted');
   });
 
+  it('is accepted when the adapter\'s own edit fires a trusted input, as execCommand does', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockImplementationOnce(async () => {
+      ctx.page.element.dispatchEvent(trusted(new InputEvent('input', { bubbles: true })));
+      ctx.page.deliver(FIXED);
+      return 'attempted';
+    });
+
+    const result = await applyThrough(ctx);
+
+    expect(result).toBe('accepted');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
   it('is stale, without asking the adapter, once the Field text no longer holds the flagged words', async () => {
     const ctx = await setupWithSlip();
     ctx.page.deliver('Nothing here.');
@@ -574,3 +585,8 @@ describe('Apply', () => {
     expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
   });
 });
+
+function trusted<E extends Event>(event: E): E {
+  Object.defineProperty(event, 'isTrusted', { value: true });
+  return event;
+}

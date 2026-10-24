@@ -92,14 +92,14 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
       const before = latest?.text;
       if (before === undefined || before.slice(slip.start, slip.end) !== flagged) return 'stale';
       const typing = watchForTyping();
-      const outcome = await adapter.replace(slip, flagged, suggestion);
-      if (outcome !== 'attempted') {
-        typing.stop();
-        return outcome === 'stale' ? 'stale' : 'accepted';
+      let interfered: boolean;
+      try {
+        const outcome = await adapter.replace(slip, flagged, suggestion);
+        if (outcome !== 'attempted') return outcome === 'stale' ? 'stale' : 'accepted';
+        await new Promise((resolve) => setTimeout(resolve, APPLY_VERDICT_MS));
+      } finally {
+        interfered = typing.stop();
       }
-
-      await new Promise((resolve) => setTimeout(resolve, APPLY_VERDICT_MS));
-      const interfered = typing.stop();
       if (interfered || signal.aborted || !latest) return 'inconclusive';
       const expected = before.slice(0, slip.start) + suggestion + before.slice(slip.end);
       if (latest.text === expected) return 'accepted';
@@ -118,7 +118,8 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     const waiting = new AbortController();
     const note = () => void (watching.happened = true);
     interference = watching;
-    for (const type of ['beforeinput', 'input']) element.addEventListener(type, (event) => event.isTrusted && note(), { signal: waiting.signal });
+    // The fallback `execCommand('insertText')` fires a trusted `input` (and no `beforeinput`), so `input` would mistake the fix itself for typing.
+    element.addEventListener('beforeinput', (event) => event.isTrusted && note(), { signal: waiting.signal });
     element.addEventListener('compositionstart', note, { signal: waiting.signal });
     return {
       stop() {

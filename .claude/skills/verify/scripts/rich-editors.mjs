@@ -383,6 +383,22 @@ const ROWS = [
     expect(count(1, 'accepted') >= 19, `${count(1, 'accepted')}/20 accepted at 1x`);
     expect(count(4, 'accepted') >= 17, `${count(4, 'accepted')}/20 accepted at 4x`);
   }),
+  row('apply-wrong', 'Apply timing', RICH, async (c) => {
+    await c.typeAtEnd(SLIP);
+    expect(await c.waitSlip('recieve'), 'no range on "recieve"');
+    await c.sleep(1600);
+    await c.js(`window.addEventListener('beforeinput', (event) => {
+      if (event.isTrusted) return;
+      setTimeout(() => {
+        const { anchorNode, anchorOffset } = getSelection();
+        if (anchorNode?.nodeType === Node.TEXT_NODE) anchorNode.insertData(anchorOffset, 'ZZ');
+      }, 60);
+    }, { capture: true }); true`);
+    const outcome = await c.applyOnce();
+    const note = (await c.card())?.note ?? null;
+    c.note({ outcome, note });
+    expect(note === 'Apply went wrong here. Press Ctrl+Z to undo it.', `the card did not say Apply went wrong: ${JSON.stringify(note)}`);
+  }),
   row('badge-clipped', 'Placement', ALL, async (c) => {
     await c.typeAtEnd(SLIP);
     await c.waitSlip('recieve');

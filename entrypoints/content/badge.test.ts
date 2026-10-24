@@ -99,6 +99,16 @@ describe('the LLM badge', () => {
     expect(badgeElement().style.top).toBe(`${BOX.bottom - 4 - 3 * BADGE_HEIGHT}px`);
   });
 
+  it('moves up when site UI covers only the bottom edge of its spot', async () => {
+    const { element } = elementWith(BOX);
+    coverBelow(element, BOX.bottom - 6);
+
+    createBadge(element).setLlmHealth({ state: 'active' });
+    await nextFrame();
+
+    expect(badgeElement().style.top).toBe(`${BOX.bottom - 4 - 2 * BADGE_HEIGHT}px`);
+  });
+
   it('hides when site UI covers every spot up the right edge', async () => {
     const { element } = elementWith(BOX);
     coverBelow(element, BOX.top);

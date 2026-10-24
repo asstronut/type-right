@@ -91,10 +91,15 @@ export function createBadge(element: HTMLElement): Badge {
   function clearSpotIn(box: DOMRect, width: number, height: number): Spot | undefined {
     const left = box.right - inset.right - width;
     for (let top = box.bottom - inset.bottom - height; top >= box.top; top -= height) {
-      const corners: [number, number][] = [[left + 1, top + 1], [left + width - 1, top + 1], [left + 1, top + height - 1], [left + width - 1, top + height - 1]];
-      if (corners.every(([x, y]) => isClear(x, y))) return { left, top };
+      if (isWhollyUncovered(left, top, width, height)) return { left, top };
     }
     return undefined;
+  }
+
+  function isWhollyUncovered(left: number, top: number, width: number, height: number): boolean {
+    const right = left + width - 1;
+    const bottom = top + height - 1;
+    return isClear(left + 1, top + 1) && isClear(right, top + 1) && isClear(left + 1, bottom) && isClear(right, bottom);
   }
 
   function isClear(x: number, y: number): boolean {

@@ -22,11 +22,11 @@ function spellingSlip(word: string, start = 0): Slip {
   };
 }
 
-const LINE = new DOMRect(10, 66, 40, 16);
+const WRAPPED_SLIP_SECOND_LINE = new DOMRect(10, 66, 40, 16);
 const WORDS = new DOMRect(10, 50, 40, 32);
 
 function hitOn(slip: Slip): SlipHit {
-  return { slip, rect: LINE };
+  return { slip, rect: WRAPPED_SLIP_SECOND_LINE };
 }
 
 function createTarget() {

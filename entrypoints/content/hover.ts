@@ -38,8 +38,8 @@ interface Pending extends Pointed {
 }
 
 interface Shown extends Pointed {
-  line: DOMRect;
-  words: DOMRect | undefined;
+  hoveredLine: DOMRect;
+  wordsWithLine: DOMRect | undefined;
 }
 
 /**
@@ -69,9 +69,9 @@ export class HoverController {
   constructor() {
     const { signal } = this.listeners;
     document.addEventListener('scroll', (event) => {
-      if (!this.card.contains(event.target)) this.followSoon();
+      if (!this.card.contains(event.target)) this.pageMoved();
     }, { capture: true, passive: true, signal });
-    window.addEventListener('resize', () => this.followSoon(), { passive: true, signal });
+    window.addEventListener('resize', () => this.pageMoved(), { passive: true, signal });
   }
 
   point(target: HoverTarget, hit: SlipHit | undefined): void {
@@ -145,10 +145,10 @@ export class HoverController {
       rect,
       target.element,
     );
-    this.shown = { target, slip, line: rect, words: target.anchorOf(slip) };
+    this.shown = { target, slip, hoveredLine: rect, wordsWithLine: target.anchorOf(slip) };
   }
 
-  private followSoon(): void {
+  private pageMoved(): void {
     this.cancelPending();
     this.frame ??= requestAnimationFrame(() => {
       this.frame = undefined;
@@ -158,11 +158,11 @@ export class HoverController {
 
   private follow(): void {
     if (!this.shown) return;
-    const { target, slip, line, words: before } = this.shown;
+    const { target, slip, hoveredLine: line, wordsWithLine: before } = this.shown;
     const words = target.anchorOf(slip);
     if (!words || !before) return this.close();
     const moved = new DOMRect(line.x + words.x - before.x, line.y + words.y - before.y, line.width, line.height);
-    this.shown = { ...this.shown, line: moved, words };
+    this.shown = { ...this.shown, hoveredLine: moved, wordsWithLine: words };
     this.card.moveTo(moved);
   }
 

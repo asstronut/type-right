@@ -17,7 +17,7 @@ export interface RegionRules {
   notChecked: readonly string[];
   trailing: readonly string[];
   neverFlag: readonly string[];
-  skip?: readonly string[];
+  skip: readonly string[];
 }
 
 export const REGION_RULES: RegionRules = {
@@ -26,7 +26,7 @@ export const REGION_RULES: RegionRules = {
   trailing: ['.gmail_signature', '.gmail_signature_prefix', '.gmail_quote'],
   neverFlag: ['code', 'ts-mention', '[data-type="mention"]', '[contenteditable="false"]', 'img.emoji', 'img[data-emoji]'],
   // #73: Gmail's Smart Compose suggestion sits inline in the caret's line. It is left out of the text entirely.
-  skip: ['.XjviVd'],
+  skip: ['span.XjviVd[contenteditable="false"]'],
 };
 
 interface Regions {
@@ -43,7 +43,7 @@ export function createRichTextReader(host: HTMLElement, regionRules: RegionRules
     notChecked: [...regionRules.notChecked, ...regionRules.trailing].join(','),
     trailing: regionRules.trailing.join(','),
     neverFlag: regionRules.neverFlag.join(','),
-    skip: (regionRules.skip ?? []).join(','),
+    skip: regionRules.skip.join(','),
   };
   const blocks: Blocks = new WeakMap();
   return {

@@ -386,7 +386,7 @@ describe('regions that are not checked', () => {
   });
 
   it('reads the selectors it is given instead of the built-in ones', () => {
-    const rules: RegionRules = { notChecked: ['.sig'], trailing: [], neverFlag: [] };
+    const rules: RegionRules = { notChecked: ['.sig'], trailing: [], neverFlag: [], skip: [] };
     const host = mount('<p>A</p><div class="sig">Sender</div><pre>kept</pre>');
 
     expect(createRichTextReader(host, rules).read([]).text).toBe('A\n\nkept');
@@ -395,7 +395,7 @@ describe('regions that are not checked', () => {
   it('checks everything when it is given no selectors', () => {
     const host = mount('<p>A</p><pre>kept</pre><p>B <code>c</code></p>');
 
-    const read = createRichTextReader(host, { notChecked: [], trailing: [], neverFlag: [] }).read([]);
+    const read = createRichTextReader(host, { notChecked: [], trailing: [], neverFlag: [], skip: [] }).read([]);
 
     expect(read.text).toBe('A\nkept\nB c');
     expect(read.neverFlag).toEqual([]);
@@ -467,6 +467,12 @@ describe("Gmail's Smart Compose suggestion", () => {
 
     expect(text).toBe('Thank you for you');
     expect(neverFlag).toEqual([]);
+  });
+
+  it('keeps text in a block that only shares the suggestion class', () => {
+    const { text } = readOf('<div class="XjviVd">User wrote this</div>');
+
+    expect(text).toBe('User wrote this');
   });
 
   it('leaves the offsets of the typed text unchanged', () => {

@@ -497,6 +497,44 @@ describe('Apply', () => {
   });
 
   it.each([
+    ['pressed a key the editor handles itself', () => trusted(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))],
+    ['pasted', () => trusted(new Event('paste', { bubbles: true }))],
+    ['dropped something', () => trusted(new Event('drop', { bubbles: true }))],
+    ['cut', () => trusted(new Event('cut', { bubbles: true }))],
+  ])('is inconclusive when the user %s during the wait, and learns nothing', async (_, userEvent) => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => {
+      ctx.page.element.dispatchEvent(userEvent());
+      ctx.page.deliver('I  it.');
+    });
+
+    expect(result).toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it('is not disturbed by a modifier key pressed alone during the wait', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockResolvedValueOnce('attempted');
+
+    const result = await applyThrough(ctx, () => {
+      ctx.page.element.dispatchEvent(trusted(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true })));
+      ctx.page.deliver(FIXED);
+    });
+
+    expect(result).toBe('accepted');
+  });
+
+  it('is inconclusive, and learns nothing, when the adapter throws', async () => {
+    const ctx = await setupWithSlip();
+    ctx.page.replace.mockRejectedValueOnce(new DOMException('The offset is larger than the node', 'IndexSizeError'));
+
+    await expect(ctx.target.apply(ctx.slip, 'recieve', 'receive')).resolves.toBe('inconclusive');
+    expect(ctx.page.onApplyRefused).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['typed', () => trusted(new InputEvent('beforeinput', { bubbles: true }))],
     ['started composing', () => new CompositionEvent('compositionstart')],
   ])('is inconclusive when the user %s while the adapter was still replacing, and learns nothing', async (_, userEvent) => {

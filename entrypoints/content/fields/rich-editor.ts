@@ -76,17 +76,20 @@ export function richEditorAdapter(host: HTMLElement, applyRefused: () => boolean
 
     async replace(slip, flagged, suggestion) {
       const read = deliver(observer?.takeRecords() ?? []);
-      const range = read && host.isContentEditable && read.text.slice(slip.start, slip.end) === flagged ? inOneTextNode(read, slip) : undefined;
-      if (!range) return 'stale';
+      const selected = read && host.isContentEditable && read.text.slice(slip.start, slip.end) === flagged ? inOneTextNode(read, slip) : undefined;
+      if (!read || !selected) return 'stale';
 
       host.focus({ preventScroll: true });
       const live = document.createRange();
-      live.setStart(range.startContainer, range.startOffset);
-      live.setEnd(range.endContainer, range.endOffset);
+      live.setStart(selected.startContainer, selected.startOffset);
+      live.setEnd(selected.endContainer, selected.endOffset);
       const selection = document.getSelection();
       selection?.removeAllRanges();
       selection?.addRange(live);
       await nextSelectionChangeOrFrame();
+      const afterWait = deliver(observer?.takeRecords() ?? []);
+      const untypedRange = afterWait?.text === read.text ? inOneTextNode(afterWait, slip) : undefined;
+      if (!untypedRange) return 'stale';
 
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', suggestion);
@@ -95,7 +98,7 @@ export function richEditorAdapter(host: HTMLElement, applyRefused: () => boolean
           inputType: 'insertReplacementText',
           data: suggestion,
           dataTransfer,
-          targetRanges: [range],
+          targetRanges: [untypedRange],
           bubbles: true,
           cancelable: true,
           composed: true,

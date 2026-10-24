@@ -309,6 +309,29 @@ describe('Apply in a Rich editor', () => {
     expect(events).toHaveLength(2);
   });
 
+  it.each([
+    ['replaced the selected word', 'I  it.'],
+    ['edited the text elsewhere', 'I recieve it. And'],
+  ])('is stale, and sends nothing, when a key %s while it waited for the editor', async (_, typed) => {
+    const host = addEditable('<p>I recieve it.</p>');
+    const adapter = adapterOn(host);
+    const events = beforeInputsOn(host);
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+
+    const outcome = adapter.replace(SLIP, 'recieve', 'receive');
+    await vi.advanceTimersByTimeAsync(0);
+    host.firstElementChild!.firstChild!.textContent = typed;
+    document.dispatchEvent(new Event('selectionchange'));
+
+    await expect(outcome).resolves.toBe('stale');
+    expect(events).toEqual([]);
+    expect(execCommand).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+    installStaticRange();
+    installTargetRanges();
+  });
+
   it('falls back to the editing command when nobody claimed the event and the word is still there', async () => {
     const adapter = adapterOn(addEditable('<p>I recieve it.</p>'));
 

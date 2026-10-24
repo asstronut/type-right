@@ -22,6 +22,10 @@ export type ReplaceOutcome = 'stale' | 'replaced' | 'attempted';
 
 export const APPLY_VERDICT_MS = 150;
 
+const USER_EDIT_EVENTS = ['beforeinput', 'keydown', 'paste', 'drop', 'cut'] as const;
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
+const isModifierOnly = (event: Event) => event instanceof KeyboardEvent && MODIFIER_KEYS.has(event.key);
+
 /** What differs between the kinds of Field (textarea, Rich editor); the rest is `createField`. */
 export interface FieldAdapter {
   readonly element: HTMLElement;
@@ -97,6 +101,8 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
         const outcome = await adapter.replace(slip, flagged, suggestion);
         if (outcome !== 'attempted') return outcome === 'stale' ? 'stale' : 'accepted';
         await new Promise((resolve) => setTimeout(resolve, APPLY_VERDICT_MS));
+      } catch {
+        return 'inconclusive';
       } finally {
         interfered = typing.stop();
       }
@@ -119,7 +125,10 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     const note = () => void (watching.happened = true);
     interference = watching;
     // The fallback `execCommand('insertText')` fires a trusted `input` (and no `beforeinput`), so `input` would mistake the fix itself for typing.
-    element.addEventListener('beforeinput', (event) => event.isTrusted && note(), { signal: waiting.signal });
+    // Editors that handle a key in `keydown` and cancel it (Enter in ProseMirror, Quill, Draft) fire no `beforeinput` at all.
+    for (const type of USER_EDIT_EVENTS) {
+      element.addEventListener(type, (event) => event.isTrusted && !isModifierOnly(event) && note(), { signal: waiting.signal });
+    }
     element.addEventListener('compositionstart', note, { signal: waiting.signal });
     return {
       stop() {

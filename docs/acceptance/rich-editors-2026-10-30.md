@@ -1,6 +1,6 @@
 # Live acceptance pass: Type Right in Rich editors (2026-10-30)
 
-The acceptance gate from #78 (decision #59). The user drives each site in their own Chrome; the agent watches read-only through Claude in Chrome (DOM, page-visible `CSS.highlights`, screenshots). Only sample text is typed, nothing is sent or posted, and every draft is discarded.
+The acceptance gate from #78 (decision #59). The user drives each site in their own Chrome; the agent watches read-only through Claude in Chrome (DOM, page-visible `CSS.highlights`, screenshots). Only sample text is typed, plus a single test character (Z) on some sites, and nothing is sent or posted. On X the agent also attached in-page event listeners to log the caret.
 
 - **Extension build:** stack tip `a08a862` (PR #89 on top of #79 to #88), built from `.claude/worktrees/live-pass/.output/chrome-mv3`
 - **Chrome:** 155.0.8059.85
@@ -22,7 +22,12 @@ Gaps, not run or not recorded:
 - Engine versions (`Quill.version`, ProseMirror or TipTap package versions) were not captured. Only the editor root classes were.
 - No screenshots are attached. Evidence is the page's own DOM and `CSS.highlights` readings, quoted in the notes.
 - Caret placement after Apply, which is not a checklist item, was inconclusive on ChatGPT and not checked on Gmail, Slack, LinkedIn or the GitHub textarea.
-- Best-effort rows were not run.
+- The LLM Provider was not recorded.
+- Item 6 (Tally) on Gmail is marked pass on weak evidence: the Popup showed non-zero totals (Spelling 7, Grammar 2, Wording 1), but no baseline was taken, so a rise was not observed.
+- Item 5 (badge): the fade was measured only on Gmail compose. On the other sites only placement was checked.
+- Item 1 (underlines): checked while typing. Scrolling was checked on no site.
+- Not recorded from the "Also watch for" list: whether Gmail's Smart Compose grey text stays un-underlined (no suggestion appeared during the pass; the skip rule is covered by unit tests and the fixture matrix from #89), whether a site popup opened over the badge (the PR #88 trade), clipping on X, and how Gmail's own spelling suggestions look next to ours.
+- Best-effort rows were not run, including Grammarly and LanguageTool coexistence.
 
 ## Setup
 
@@ -68,14 +73,14 @@ Also watch for:
 
 | Composer | Engine seen | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Gmail compose | Gmail custom contenteditable (`div[aria-label="Message Body"]`) | pass | pass | pass | pass | pass | pass | pass | pass | pass (2/2 spelling Applies accepted) | Underlines exact on recieve, tomorow, seperate (spelling) and Their, it are (grammar); signature not underlined; Gmail's dotted grammar line sits under ours. Badge 4/4 px bottom-right, fades to 0.25 on input and returns 1.5 s after the last key. Popup showed Spelling 7, Grammar 2, Wording 1 (lifetime totals, no baseline taken). Grammar has no Apply by design. |
+| Gmail compose | Gmail custom contenteditable (`div[aria-label="Message Body"]`) | pass | pass | pass | pass | pass | pass | pass | pass | 2 Applies, both accepted | Underlines exact on recieve, tomorow, seperate (spelling) and Their, it are (grammar); signature not underlined; Gmail's dotted grammar line sits under ours. Badge 4/4 px bottom-right, fades to 0.25 on input and returns 1.5 s after the last key. Popup showed Spelling 7, Grammar 2, Wording 1 (lifetime totals, no baseline taken). Grammar has no Apply by design. |
 | Gmail reply | same editor as compose | pass | pass | (as compose) | (as compose) | pass | (as compose) | pass | pass | (as compose) | Expanded quoted history (2,746 chars) and signature have zero underlines; typed text underlined exactly. Badge bottom-right above the formatting toolbar, covering nothing. Apply then one Ctrl+Z left "recieve" restored with its underline back. |
 | Slack message | Quill (`.ql-editor`) | pass | pass | pass | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | pass (3/3: recieve, tomorow, seperate) | One-line box: badge at the right end above Send, covering no control; a long line would run under it. Mention chip is `ts-mention` without contenteditable=false; text typed after it stays outside the chip and is checked ("I recieve it" underlined), the chip itself never flagged (answers the #82 note). |
 | LinkedIn post | TipTap / ProseMirror (`.tiptap.ProseMirror`) in a native modal `<dialog>` | pass | pass | pass | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | pass (3/3) | Badge and card are mounted inside the modal dialog and every card button worked there. The editing host is one line tall, so the badge sits at the right end of the first line; it covers no control, but a long first line runs under it. |
 | X post | Draft.js (`.public-DraftEditor-content`) in a `role=dialog` (not a modal `<dialog>`) | pass | pass | **not run** | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | pass (There, tomorrow, receive, separate all applied; one Ctrl+Z restored recieve) | **Caret after Apply:** Draft puts the caret back where its own state last had it, not after the fixed word. Measured: Apply "receive" at offset 7 left the caret at 51, and the next typed Z landed there ("sepzarate"). Apply plus an immediate Enter split "separate" into "sep" / "arate". Text is never corrupted, but the next keystroke can land in an unexpected place. This is outside item 7 and tracked in #91. |
 | claude.ai | TipTap / ProseMirror (`.tiptap.ProseMirror`) | pass | pass | **fail** (#92) | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | pass (3/3: receive, tomorrow, separate) | Badge bottom-right above Send, covering nothing. The caret sits after the fixed word after Apply (the Z landed as "separatez"). Ignore here on the grammar Slip "Their" made a second, overlapping spelling Slip on the same word appear at once. That is most likely how overlapping Slips merge, not a Rich-editor issue: https://github.com/asstronut/type-right/issues/92. |
 | ChatGPT | ProseMirror (`.ProseMirror`) | pass | pass | pass | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | pass (3/3: receive, tomorrow, separate) | Badge bottom-right above Send, covering nothing. Ignore here removed "it are". The caret check is inconclusive: Ignore here came between Apply and the Z, and the Z landed inside "are" ("azre"), most likely where a click on the word left the caret. |
-| Gemini | Quill (`.ql-editor`) | pass | pass | pass | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | pass (recieve then undo, tomorrow) | Badge bottom-right above the Send row, covering nothing. Caret check passed: a Z typed 2 s after Apply landed right after the fixed word ("tomorrowz"). Ignore here removed "Their". |
+| Gemini | Quill (`.ql-editor`) | pass | pass | pass | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | 2 Applies, both accepted | Badge bottom-right above the Send row, covering nothing. Caret check passed: a Z typed 2 s after Apply landed right after the fixed word ("tomorrowz"). Ignore here removed "Their". |
 | GitHub comment (textarea) | `<textarea>` (Primer `prc-Textarea`) | pass | pass | not run | not run (Gmail only) | pass | not run (Gmail only) | pass | pass | 1 Apply, accepted | Wavy underlines through `OpaqueRange` highlights, exact on all five Slips. Badge at 18/4 px inside the textarea, clear of the Comment buttons. Apply plus one Ctrl+Z restored "recieve". |
 
 Best-effort rows (non-blocking): Gmail forward, Slack thread and edit, LinkedIn comments and messaging, X DMs, GitHub review comments.

@@ -15,7 +15,7 @@ Failures, each with an issue:
 - https://github.com/asstronut/type-right/issues/92: on claude.ai, Ignore here on "Their" made a second, overlapping Slip appear on the same word. Item 3 fails there.
 
 Gaps, not run or not recorded:
-- X item 3 (Ignore here) was not run.
+- Item 3 (Ignore here) was not run on X or on the GitHub comment textarea.
 - **Scoping choice:** Dictionary (item 4) and Tally (item 6) were run on Gmail only. Tally lives in the background and the Popup. Dictionary removal re-renders each editor, so on the other sites it was not observed.
 - "(as compose)" on Gmail reply means the same editor and the same extension build as Gmail compose, so the result was taken from compose, not re-run.
 - Apply attempts were fewer than about 3 on Gmail compose (2), Gemini (2) and GitHub (1).

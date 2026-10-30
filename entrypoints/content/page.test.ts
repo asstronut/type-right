@@ -465,6 +465,9 @@ describe('a textarea that already holds text', () => {
   });
 });
 
+const SMART_COMPOSE =
+  '<span class="XjviVd yq" contenteditable="false"><span class="bxX nO" aria-live="off">r email</span><span class="by3"><span class="by4" spellcheck="false">tab</span></span></span>';
+
 describe('a Rich editor', () => {
   it('becomes a Field when it is focused, checks its text and underlines its Slips', async () => {
     const editor = addEditor(`<p>${TEXT}</p>`);
@@ -506,6 +509,17 @@ describe('a Rich editor', () => {
 
       expect(page.worker.llm).toHaveBeenCalledWith('I recieve it.');
     });
+  });
+
+  it("does not send Gmail's Smart Compose suggestion, or the line it sits in, to the engines", async () => {
+    const editor = addEditor(`<div>I recieve it${SMART_COMPOSE}</div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature">Sender</div>`);
+    const page = createPage();
+    focus(editor);
+
+    await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS + DEBOUNCE_MS);
+
+    expect(page.worker.languageTool).toHaveBeenCalledWith('I recieve it');
+    expect(page.worker.llm).not.toHaveBeenCalled();
   });
 
   it('counts a line followed by a code block at the end as a Finished sentence', async () => {

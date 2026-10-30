@@ -386,7 +386,7 @@ describe('regions that are not checked', () => {
   });
 
   it('reads the selectors it is given instead of the built-in ones', () => {
-    const rules: RegionRules = { notChecked: ['.sig'], trailing: [], neverFlag: [] };
+    const rules: RegionRules = { notChecked: ['.sig'], trailing: [], neverFlag: [], skip: [] };
     const host = mount('<p>A</p><div class="sig">Sender</div><pre>kept</pre>');
 
     expect(createRichTextReader(host, rules).read([]).text).toBe('A\n\nkept');
@@ -395,7 +395,7 @@ describe('regions that are not checked', () => {
   it('checks everything when it is given no selectors', () => {
     const host = mount('<p>A</p><pre>kept</pre><p>B <code>c</code></p>');
 
-    const read = createRichTextReader(host, { notChecked: [], trailing: [], neverFlag: [] }).read([]);
+    const read = createRichTextReader(host, { notChecked: [], trailing: [], neverFlag: [], skip: [] }).read([]);
 
     expect(read.text).toBe('A\nkept\nB c');
     expect(read.neverFlag).toEqual([]);
@@ -452,6 +452,61 @@ describe("Gmail's signature and quoted history", () => {
     const { text, rangeFor } = readOf(GMAIL_COMPOSE);
 
     expect(textUnder(rangeFor(spanOf(text, 'diffrence')))).toBe('diffrence');
+  });
+});
+
+const SMART_COMPOSE =
+  '<span class="XjviVd yq" contenteditable="false"><span class="bxX nO" aria-live="off">r email</span><span class="by3"><span class="by4" spellcheck="false">tab</span></span></span>';
+
+describe("Gmail's Smart Compose suggestion", () => {
+  const typing = (ghost: string) =>
+    `<div><div class="gmail_default">Thank you for you${ghost}</div><div><br></div><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature" data-smartmail="gmail_signature">Sender</div></div>`;
+
+  it('is left out of the text, without the "tab" hint or a split line', () => {
+    const { text, neverFlag } = readOf(typing(SMART_COMPOSE));
+
+    expect(text).toBe('Thank you for you');
+    expect(neverFlag).toEqual([]);
+  });
+
+  it('keeps text in a block that only shares the suggestion class', () => {
+    const { text } = readOf('<div class="XjviVd">User wrote this</div>');
+
+    expect(text).toBe('User wrote this');
+  });
+
+  it('leaves the offsets of the typed text unchanged', () => {
+    const { text, rangeFor } = readOf(typing(SMART_COMPOSE));
+
+    expect(textUnder(rangeFor(spanOf(text, 'you')))).toBe('you');
+    expect(textUnder(rangeFor(spanOf(text, 'Thank')))).toBe('Thank');
+  });
+
+  it('reads after the suggestion appears, changes and goes what a fresh read gives', () => {
+    const host = mount(typing(''));
+    const reader = createRichTextReader(host);
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(host, { childList: true, characterData: true, subtree: true });
+    reader.read([]);
+    const line = host.querySelector('.gmail_default')!;
+    const steps: [string, () => void][] = [
+      ['appears', () => line.insertAdjacentHTML('beforeend', SMART_COMPOSE)],
+      ['changes', () => (host.querySelector('.bxX')!.firstChild as Text).data = 'r email address'],
+      ['changes its hint', () => (host.querySelector('.by4')!.firstChild as Text).data = 'enter'],
+      ['goes', () => host.querySelector('.XjviVd')!.remove()],
+      ['comes back', () => line.insertAdjacentHTML('beforeend', SMART_COMPOSE)],
+      ['is typed over', () => { host.querySelector('.XjviVd')!.remove(); (line.firstChild as Text).data += 'r'; }],
+    ];
+
+    for (const [name, change] of steps) {
+      change();
+      const incremental = reader.read(observer.takeRecords());
+      const fresh = createRichTextReader(host).read([]);
+
+      expect(incremental.text, name).toBe(fresh.text);
+      expect(incremental.text, name).toMatch(/^Thank you for you(r)?$/);
+    }
+    observer.disconnect();
   });
 });
 

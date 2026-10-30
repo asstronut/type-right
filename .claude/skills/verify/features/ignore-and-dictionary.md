@@ -29,4 +29,3 @@ Preconditions:
 
 - `Add to dictionary` only appears on spelling Slips.
 - Ignore here is per Field and lasts until reload. The same Slip in the other Field stays underlined, and that is correct, not a bug.
-- `dict-remove` has not been driven yet. Confirm the selector before relying on it, and fix this line once it has been run.

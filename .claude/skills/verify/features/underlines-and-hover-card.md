@@ -1,6 +1,6 @@
 # Underlines and the Hover card
 
-When a user pauses typing in any textarea, Type Right underlines each Slip in place: red for spelling, blue for grammar. Resting the mouse on an underline opens the Hover card with the Slip's kind, type and explanation. The answer stays hidden until `Show answer` is pressed. A spelling Slip offers `Apply` for each suggestion, which replaces the word in the field.
+When a user pauses typing in any textarea, Type Right underlines each Slip in place with a wavy CSS highlight: red for spelling, blue for grammar. Resting the mouse on an underline opens the Hover card with the Slip's kind, type and explanation. The answer stays hidden until `Show answer` is pressed. A spelling Slip offers `Apply` for each suggestion, which replaces the word in the field.
 
 ## Sub-features
 

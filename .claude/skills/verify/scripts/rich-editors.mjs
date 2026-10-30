@@ -735,15 +735,13 @@ function cellContext(h, { cdp, page, state, column, row, replies, shotDir }) {
 }
 
 async function withTypeRightMarksHidden(page, capture) {
-  await page.eval(`window.__trHidden = { highlights: [...CSS.highlights].filter(([name]) => name.startsWith('type-right-')), overlays: [...document.querySelectorAll('[data-type-right-overlay]')] };
-    __trHidden.highlights.forEach(([name]) => CSS.highlights.delete(name));
-    __trHidden.overlays.forEach((o) => { o.dataset.verifyVisibility = o.style.visibility; o.style.visibility = 'hidden'; })`);
+  await page.eval(`window.__trHidden = [...CSS.highlights].filter(([name]) => name.startsWith('type-right-'));
+    __trHidden.forEach(([name]) => CSS.highlights.delete(name))`);
   try {
     await page.eval('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
     return await capture();
   } finally {
-    await page.eval(`__trHidden.highlights.forEach(([name, h]) => CSS.highlights.set(name, h));
-      __trHidden.overlays.forEach((o) => { o.style.visibility = o.dataset.verifyVisibility; delete o.dataset.verifyVisibility; })`);
+    await page.eval(`__trHidden.forEach(([name, h]) => CSS.highlights.set(name, h))`);
   }
 }
 

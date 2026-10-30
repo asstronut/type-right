@@ -13,6 +13,7 @@ const defaultQuote = [
   'Hi, the invoice is attached. Please check the adress and confirm on this thread.',
   'If the total looks wrong, tell me before Friday.',
   FILLER,
+  FILLER,
   'Thanks, Budi',
 ];
 

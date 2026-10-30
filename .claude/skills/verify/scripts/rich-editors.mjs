@@ -790,6 +790,7 @@ async function longContent(c, h, { cdp, state }) {
   const otherTasks = firstCheck.filter((t) => t !== attach).map((t) => t.ms);
   const flaggedAtStart = (await c.highlights()).filter((x) => x.inHost).length;
   const typing = {};
+  const frames = {};
   for (const rate of [1, 4]) {
     await c.send('Emulation.setCPUThrottlingRate', { rate });
     try {
@@ -797,16 +798,20 @@ async function longContent(c, h, { cdp, state }) {
         await c.focusEnd();
         await c.type(' We will recieve the rest of the files tomorrow.');
       });
-      typing[rate] = contentScriptTasks(events, script).filter((t) => t.dispatched.includes('keydown')).map((t) => t.ms);
+      const tasks = contentScriptTasks(events, script);
+      typing[rate] = tasks.filter((t) => t.dispatched.includes('keydown')).map((t) => t.ms);
+      frames[rate] = tasks.filter((t) => t.animationFrame && !t.dispatched.includes('keydown')).map((t) => t.ms);
     } finally {
       await c.send('Emulation.setCPUThrottlingRate', { rate: 1 });
     }
   }
-  const p95 = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] : 0);
+  const quantile = (xs, q) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * q) - 1] : 0);
+  const p95 = (xs) => quantile(xs, 0.95);
+  const spread = (xs) => ({ tasks: xs.length, p50Ms: round(quantile(xs, 0.5)), p95Ms: round(p95(xs)), maxMs: round(Math.max(0, ...xs)) });
   c.note({
     firstCheck: { tasksWithTypeRightWork: firstCheck.length, attachReadMs: round(attach?.ms ?? 0), longestOtherTaskMs: round(Math.max(0, ...otherTasks)) },
-    typing1x: { batches: typing[1].length, p95Ms: round(p95(typing[1])) },
-    typing4x: { batches: typing[4].length, p95Ms: round(p95(typing[4])) },
+    typing1x: { batches: typing[1].length, p95Ms: round(p95(typing[1])), animationFrames: spread(frames[1]) },
+    typing4x: { batches: typing[4].length, p95Ms: round(p95(typing[4])), animationFrames: spread(frames[4]) },
     rangesOnHostAfterFirstCheck: flaggedAtStart,
   });
   const typed = await c.waitSlip('recieve');
@@ -835,6 +840,7 @@ async function traced(cdp, h, fn) {
 function contentScriptTasks(events, scriptPrefix) {
   const calls = events.filter((e) => e.name === 'FunctionCall' && e.ph === 'X' && e.args?.data?.url?.startsWith(scriptPrefix));
   const dispatches = events.filter((e) => e.name === 'EventDispatch');
+  const frames = events.filter((e) => e.name === 'FireAnimationFrame');
   const tasks = events.filter((e) => e.name === 'RunTask' && e.ph === 'X');
   const out = [];
   for (const task of tasks) {
@@ -848,7 +854,7 @@ function contentScriptTasks(events, scriptPrefix) {
       else if (call.ts + call.dur > end) total += call.ts + call.dur - end;
       end = Math.max(end, call.ts + call.dur);
     }
-    out.push({ ts: task.ts, ms: total / 1000, dispatched: dispatches.filter(inside).map((e) => e.args?.data?.type) });
+    out.push({ ts: task.ts, ms: total / 1000, dispatched: dispatches.filter(inside).map((e) => e.args?.data?.type), animationFrame: frames.some(inside) });
   }
   return out.sort((a, b) => a.ts - b.ts);
 }

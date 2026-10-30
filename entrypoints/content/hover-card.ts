@@ -1,4 +1,5 @@
 import type { Slip } from '../../lib/slips';
+import { lower, raise } from './top-layer';
 import { KIND_COLORS } from './underlines';
 
 /** LanguageTool can return dozens of suggestions for a misspelling; only the first few are useful. */
@@ -157,14 +158,9 @@ export class HoverCard {
 
   constructor(options: HoverCardOptions) {
     this.host = document.createElement('type-right-card');
-    this.host.style.cssText = [
-      'all: initial',
-      'position: fixed',
-      'top: 0',
-      'left: 0',
-      'z-index: 2147483647',
-      'display: none',
-    ].join(';');
+    this.host.popover = 'manual';
+    // `all: initial` also takes off the browser's popover box (inset, margin, border, padding, background).
+    this.host.style.cssText = ['all: initial', 'position: fixed', 'top: 0', 'left: 0', 'display: none'].join(';');
     this.root = this.host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     style.textContent = STYLES;
@@ -178,23 +174,22 @@ export class HoverCard {
     });
   }
 
-  /** Shows the card for `content`, placed beside `anchor` (the underlined text's box). */
-  show(content: HoverCardContent, anchor: DOMRect): void {
-    if (!this.host.isConnected) document.documentElement.appendChild(this.host);
+  /** Shows the card for `content`, placed beside `anchor` (the underlined text's box), in the top layer with `near`. */
+  show(content: HoverCardContent, anchor: DOMRect, near: Element): void {
     this.root.querySelector('.card')?.remove();
     this.root.appendChild(renderCard(content));
     this.shown = content.slip;
 
-    this.host.style.display = 'block';
     this.host.style.visibility = 'hidden';
-    this.place(anchor);
+    raise(this.host, near);
+    this.moveTo(anchor);
     this.host.style.visibility = 'visible';
   }
 
   hide(): void {
     if (!this.shown) return;
     this.shown = null;
-    this.host.style.display = 'none';
+    lower(this.host);
     this.root.querySelector('.card')?.remove();
   }
 
@@ -209,7 +204,7 @@ export class HoverCard {
   }
 
   /** Below the anchor unless only above fits; clamped horizontally to the viewport. */
-  private place(anchor: DOMRect): void {
+  moveTo(anchor: DOMRect): void {
     const card = this.host.getBoundingClientRect();
     const viewportWidth = document.documentElement.clientWidth;
     const viewportHeight = document.documentElement.clientHeight;

@@ -60,10 +60,12 @@ function createFakeAdapter() {
 function createFakeUnderlines() {
   const drawn = new Map<object, DrawnSlip[]>();
   let hit: SlipHit | undefined;
+  let words: DOMRect | undefined;
   const hitAt = vi.fn((_owner: object, _x: number, _y: number) => hit);
   const underlines: Underlines = {
     draw: (owner, next) => void drawn.set(owner, next),
     hitAt,
+    boundsOf: (owner, slip) => (drawn.get(owner)?.some((drawnSlip) => drawnSlip.slip.id === slip.id) ? words : undefined),
     forget: (owner) => void drawn.delete(owner),
     dispose: () => drawn.clear(),
   };
@@ -74,6 +76,9 @@ function createFakeUnderlines() {
     pointerRestsOn(next: SlipHit | undefined) {
       hit = next;
     },
+    wordsAt(next: DOMRect) {
+      words = next;
+    },
   };
 }
 
@@ -83,6 +88,7 @@ function setup({ settings = DEFAULT_SETTINGS }: { settings?: Settings } = {}) {
   const hover = {
     point: vi.fn<(target: HoverTarget, hit: SlipHit | undefined) => void>(),
     closeFor: vi.fn<(target: HoverTarget) => void>(),
+    keepOnly: vi.fn<(target: HoverTarget, slips: readonly Slip[]) => void>(),
     close: vi.fn<() => void>(),
   };
   const languageTool = vi.fn(checkSpelling);
@@ -219,10 +225,11 @@ describe('checking what is read', () => {
 });
 
 describe('the badge', () => {
-  it('follows an element that moved without a scroll or resize once the Field is read again', () => {
+  it('follows an element that moved without a scroll or resize once the Field is read again', async () => {
     const page = setup();
     const measure = vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 200, 300, 80));
     page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
     const badge = document.querySelector<HTMLElement>('[data-type-right-badge]')!;
     const top = () => parseFloat(badge.style.top);
     expect(top()).toBeGreaterThan(200);
@@ -230,6 +237,7 @@ describe('the badge', () => {
     measure.mockReturnValue(new DOMRect(0, 114, 300, 80));
     const before = top();
     page.deliver(`${TEXT} More.`);
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
 
     expect(top()).toBe(before - 86);
   });
@@ -306,6 +314,7 @@ describe('the Hover card', () => {
     const measure = vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 50));
     page.deliver('All good.');
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
     measure.mockClear();
 
     document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 54, bubbles: true }));
@@ -369,6 +378,17 @@ describe('the Hover card', () => {
     expect(page.hover.closeFor).toHaveBeenCalledWith(target);
   });
 
+  it('tells the Hover card which Slips the Field has after every check result', async () => {
+    const page = setup();
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await page.pointAt(page.drawn()![0]!.slip);
+    const target = page.hoverTarget();
+
+    expect(page.hover.keepOnly).toHaveBeenLastCalledWith(target, page.drawn()!.map(({ slip }) => slip));
+    expect(page.drawn()).not.toHaveLength(0);
+  });
+
   it('hands the adapter the words the card was opened on, so it can refuse a fix once they changed', async () => {
     const page = setup();
     page.deliver(TEXT);
@@ -381,6 +401,22 @@ describe('the Hover card', () => {
 
     void target.apply(slip, flagged, 'receive');
     expect(page.replace).toHaveBeenCalledWith(slip, 'recieve', 'receive');
+  });
+
+  it("anchors the card on the Slip's words while they show, and on nothing once they scroll out of what shows of the Field", async () => {
+    const page = setup();
+    vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 300, 80));
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const slip = page.drawn()![0]!.slip;
+    await page.pointAt(slip);
+    const target = page.hoverTarget();
+    const shown = new DOMRect(20, 120, 50, 16);
+
+    page.wordsAt(shown);
+    expect(target.anchorOf(slip)).toBe(shown);
+    page.wordsAt(new DOMRect(20, 70, 50, 16));
+    expect(target.anchorOf(slip)).toBeUndefined();
   });
 
   it('adds a word to the Dictionary', async () => {

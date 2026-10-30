@@ -31,6 +31,8 @@ export interface Underlines {
   /** Replaces `owner`'s underlines with `drawn`. */
   draw(owner: object, drawn: DrawnSlip[]): void;
   hitAt(owner: object, x: number, y: number): SlipHit | undefined;
+  /** Where `owner`'s underline for `slip` is now, or `undefined` when it has none. */
+  boundsOf(owner: object, slip: Slip): DOMRect | undefined;
   forget(owner: object): void;
   /** Leaves the registry: deletes each name only while it still holds our own Highlight. */
   dispose(): void;
@@ -104,6 +106,13 @@ export function createUnderlines(): Underlines {
       return undefined;
     },
 
+    boundsOf(owner, slip) {
+      for (const [range, { id, start, end }] of drawn.get(owner) ?? []) {
+        if (id === slip.id && start === slip.start && end === slip.end) return measurable(range).getBoundingClientRect();
+      }
+      return undefined;
+    },
+
     forget: release,
 
     dispose() {
@@ -134,8 +143,12 @@ function isMeasurable(range: AbstractRange): range is AbstractRange & Measurable
   return 'getClientRects' in range;
 }
 
+function measurable(range: AbstractRange): Measurable {
+  return isMeasurable(range) ? range : liveRangeOf(range);
+}
+
 function rectAt(range: AbstractRange, x: number, y: number): DOMRect {
-  const measured = isMeasurable(range) ? range : liveRangeOf(range);
+  const measured = measurable(range);
   for (const rect of measured.getClientRects()) {
     if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return rect;
   }

@@ -277,6 +277,48 @@ describe('createSlipTracker', () => {
       expect(flagged(tracker, slips)).toEqual(['llm:recieve@2']);
     });
 
+    it('drops a Slip that overlaps or covers a never-flag span, and keeps one beside it', () => {
+      const tracker = trackerWith('Thanks @Dana Lee, I recieve it.', [
+        slip('languagetool', 'Dana', 8),
+        slip('languagetool', 'Lee,', 13, 'grammar'),
+        slip('languagetool', 'recieve', 20),
+        slip('languagetool', 'Thanks', 0),
+      ]);
+
+      tracker.setNeverFlag([{ start: 7, end: 17 }]);
+
+      expect(flagged(tracker)).toEqual(['languagetool:Thanks@0', 'languagetool:recieve@20']);
+    });
+
+    it('keeps a Slip that ends where a never-flag span starts or starts where it ends', () => {
+      const tracker = trackerWith('recieve@Dana ngecek', [slip('llm', 'recieve', 0), slip('llm', 'ngecek', 13)]);
+
+      tracker.setNeverFlag([{ start: 7, end: 12 }]);
+
+      expect(flagged(tracker)).toEqual(['llm:recieve@0', 'llm:ngecek@13']);
+    });
+
+    it('drops never-flag Slips before the merge, so they hide nothing', () => {
+      const tracker = trackerWith('I recieve it.', [
+        slip('languagetool', 'I recieve', 0, 'grammar'),
+        slip('llm', 'recieve', 2),
+      ]);
+
+      tracker.setNeverFlag([{ start: 2, end: 9 }]);
+
+      expect(flagged(tracker)).toEqual([]);
+    });
+
+    it('shows a Slip again once the spans no longer cover it', () => {
+      const tracker = trackerWith('I recieve it.', [slip('llm', 'recieve', 2)]);
+      tracker.setNeverFlag([{ start: 2, end: 9 }]);
+      expect(flagged(tracker)).toEqual([]);
+
+      tracker.setNeverFlag([]);
+
+      expect(flagged(tracker)).toEqual(['llm:recieve@2']);
+    });
+
     it('drops Ignore here Slips after the merge, taking the LanguageTool Slips an LLM Slip hid with it', () => {
       const llmSlip = slip('llm', 'recieve', 2);
       const tracker = trackerWith('I recieve it. You recieve it.', [

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createField, type FieldAdapter, type FieldRead } from './field';
 import type { HoverTarget } from '../hover';
+import type { TextSpan } from '../../../lib/slip-tracker';
 import type { DrawnSlip, SlipHit, Underlines } from '../underlines';
 import { createTestLlmWiring } from '../../../lib/llm-test-wiring';
 import { DEFAULT_SETTINGS, type Settings } from '../../../lib/settings';
@@ -45,10 +46,10 @@ function createFakeAdapter() {
     adapter,
     element,
     replace,
-    deliver(text: string) {
+    deliver(text: string, neverFlag: TextSpan[] = []) {
       onRead?.({
         text,
-        neverFlag: [],
+        neverFlag,
         composing: false,
         rangeFor: (span) => ({ startOffset: span.start, endOffset: span.end }) as unknown as AbstractRange,
       });
@@ -135,6 +136,16 @@ afterEach(() => {
 });
 
 describe('checking what is read', () => {
+  it('draws no underline on a word inside a never-flag span, and keeps the one beside it', async () => {
+    const page = setup();
+    const text = 'I wich @recieve ok';
+
+    page.deliver(text, [{ start: 7, end: 15 }]);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(page.underlined(text)).toEqual(['wich']);
+  });
+
   it('checks a read after the pause and underlines the flagged word', async () => {
     const page = setup();
 

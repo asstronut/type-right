@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRichTextReader } from './rich-text';
+import { createRichTextReader, REGION_RULES, type RegionRules } from './rich-text';
 import { installStaticRange, textUnder } from '../test-static-range';
 
 const ZERO_WIDTH_SPACE = '\u200b';
 const BYTE_ORDER_MARK = '\ufeff';
 const WORD_JOINER = '\u2060';
 const NO_BREAK_SPACE = '\u00a0';
+const OBJECT_REPLACEMENT = String.fromCharCode(0xfffc);
 
 function mount(html: string): HTMLElement {
   const host = document.body.appendChild(document.createElement('div'));
@@ -53,7 +54,6 @@ describe('the text of blocks', () => {
     ['bare text in the host is a line', 'Hello <b>big</b> <a href="#">world</a>', 'Hello big world'],
     ['the last block has no trailing line break', '<p>One</p><p>Two</p>', 'One\nTwo'],
     ['a list item holding a paragraph is one line', '<ul><li><p>one</p></li><li><p>two</p></li></ul>', 'one\ntwo'],
-    ['a quote holding paragraphs is one line each', '<blockquote><p>a</p><p>b</p></blockquote><p>c</p>', 'a\nb\nc'],
     ['bare text beside a block is its own line', 'Bare<div>div</div>tail', 'Bare\ndiv\ntail'],
     ['a block inside an inline element is still a block', '<p>a</p><a href="#"><div>b</div></a><p>c</p>', 'a\nb\nc'],
     ['headings and table cells are blocks', '<h1>Title</h1><table><tbody><tr><td>x</td><td>y</td></tr></tbody></table>', 'Title\nx\ny'],
@@ -75,7 +75,7 @@ describe('the text of blocks', () => {
         '</div>',
     );
 
-    expect(text).toBe('Reminder for @team: it is due.\nif (answers.adress) {\n  save(answers);\n}\n\nPlease be carefull');
+    expect(text).toBe('Reminder for @team: it is due.\n\n\nPlease be carefull');
   });
 
   it("reads Gmail's bare text beside divs, its trailing breaks and its signature as lines", () => {
@@ -93,7 +93,7 @@ describe('the text of blocks', () => {
     );
 
     expect(text).toBe(
-      "@budi thanks for fixing the bug!\nThe build passed on the first try.\n\nBudi's note was short. Let's hope it works everywhere  See https://example.com/pull/42 if you want to check the diffrence.\n\n-- \nSender Name\nOn Mon, Oct 19, 2026 at 9:00 AM Budi wrote:\nHi, the invoice is attached.\nThanks, Budi",
+      "@budi thanks for fixing the bug!\nThe build passed on the first try.\n\nBudi's note was short. Let's hope it works everywhere ✅ See https://example.com/pull/42 if you want to check the diffrence.\n\n-- \nSender Name\nOn Mon, Oct 19, 2026 at 9:00 AM Budi wrote:\n",
     );
   });
 });
@@ -134,7 +134,7 @@ describe('what is not in the text', () => {
     ['zero-width characters in the middle of a text node', `ab${ZERO_WIDTH_SPACE}cd${WORD_JOINER}ef${BYTE_ORDER_MARK}`, 'abcdef'],
     ['scripts and styles', '<p>A<script>x()</script><style>p { color: red }</style></p>', 'A'],
     ['templates and noscript', '<p>A<template>t</template><noscript>n</noscript>B</p>', 'AB'],
-    ['images', '<p>A <img alt="smile" src="x"> B</p>', 'A  B'],
+    ['images that are not emoji', '<p>A <img alt="smile" src="x"> B</p>', 'A  B'],
     ['icons and embedded content', '<p>A<svg><title>Remove</title></svg><select><option>One</option></select>B</p>', 'AB'],
     ['a hidden block, without a line of its own', '<p>A</p><p hidden>H</p><p>B</p>', 'A\nB'],
     ['aria-hidden nodes', '<p>A<span aria-hidden="true">H</span>B</p>', 'AB'],
@@ -272,7 +272,7 @@ describe('ranges over the text', () => {
     it('gives every word a range that reads back as the word', () => {
       const { text, rangeFor } = readOf(html);
 
-      const words = [...text.matchAll(/\S+/g)];
+      const words = [...text.matchAll(new RegExp(`[^\\s${OBJECT_REPLACEMENT}]+`, 'g'))];
       expect(words.length).toBeGreaterThan(5);
       for (const { 0: word, index = 0 } of words) {
         const range = rangeFor({ start: index, end: index + word.length });
@@ -335,5 +335,207 @@ describe('reading again', () => {
 
   it('reports no span to leave unflagged', () => {
     expect(readOf('<p>Hello</p>').neverFlag).toEqual([]);
+  });
+});
+
+function spansOf(read: { text: string; neverFlag: { start: number; end: number }[] }): string[] {
+  return read.neverFlag.map(({ start, end }) => read.text.slice(start, end));
+}
+
+describe('regions that are not checked', () => {
+  it.each<[string, string, string]>([
+    ['a code block', '<p>before</p><pre><code>if (x.adress) {}</code></pre><p>after</p>', 'before\n\nafter'],
+    ["Quill 1.3's code block", '<p>before</p><pre class="ql-syntax">x.adress();\n</pre><p>after</p>', 'before\n\nafter'],
+    [
+      "Quill 2's code lines",
+      '<p>before</p><div class="ql-code-block-container"><div class="ql-code-block">x.adress();</div></div><p>after</p>',
+      'before\n\nafter',
+    ],
+    ['a code line outside any container', '<p>before</p><div class="ql-code-block">x.adress();</div><p>after</p>', 'before\n\nafter'],
+    ['a blockquote of paragraphs', '<p>before</p><blockquote><p>a adress</p><p>b</p></blockquote><p>after</p>', 'before\n\nafter'],
+    ['a region at the start', '<blockquote>quoted</blockquote><p>after</p>', '\nafter'],
+    ['a region at the end', '<p>before</p><pre>code</pre>', 'before\n'],
+    ['a region in the middle of a line', '<div>one <blockquote>quoted</blockquote> two</div>', 'one \n\n two'],
+    [
+      "Draft.js's nested code block",
+      '<div><div>A</div></div><pre><pre data-block="true"><div><span>code adress</span></div></pre></pre><div><div>B</div></div>',
+      'A\n\nB',
+    ],
+    ['a region deep in wrappers', '<p>a</p><div><div><pre>x</pre></div></div><p>b</p>', 'a\n\nb'],
+  ])('puts an empty line in place of %s', (_, html, expected) => {
+    expect(textOf(html)).toBe(expected);
+  });
+
+  it('keeps the prose after a region at the right offsets', () => {
+    const { text, rangeFor } = readOf('<p>before</p><pre>x.adress</pre><p>an adress here</p>');
+
+    expect(text).toBe('before\n\nan adress here');
+    expect(textUnder(rangeFor(spanOf(text, 'adress')))).toBe('adress');
+  });
+
+  it('never looks inside a region', () => {
+    const host = mount('<p>A</p><pre><code>deep</code></pre><p>B</p>');
+    const childNodes = vi.spyOn(host.querySelector('pre')!, 'childNodes', 'get');
+
+    createRichTextReader(host).read();
+
+    expect(childNodes).not.toHaveBeenCalled();
+  });
+
+  it('reads the selectors it is given instead of the built-in ones', () => {
+    const rules: RegionRules = { notChecked: ['.sig'], neverFlag: [] };
+    const host = mount('<p>A</p><div class="sig">Sender</div><pre>kept</pre>');
+
+    expect(createRichTextReader(host, rules).read().text).toBe('A\n\nkept');
+  });
+
+  it('checks everything when it is given no selectors', () => {
+    const host = mount('<p>A</p><pre>kept</pre><p>B <code>c</code></p>');
+
+    const read = createRichTextReader(host, { notChecked: [], neverFlag: [] }).read();
+
+    expect(read.text).toBe('A\nkept\nB c');
+    expect(read.neverFlag).toEqual([]);
+  });
+
+  it('has the generic selectors built in', () => {
+    expect(REGION_RULES.notChecked).toEqual(['pre', 'blockquote', '.ql-code-block']);
+    expect(REGION_RULES.neverFlag).toEqual(expect.arrayContaining(['code', '[contenteditable="false"]']));
+  });
+});
+
+describe('content that is never flagged', () => {
+  it('keeps a Slack mention chip in the text as its label', () => {
+    const read = readOf('<p>Thanks <ts-mention spellcheck="false" data-label="@Dana">@Dana</ts-mention> for the fix</p>');
+
+    expect(read.text).toBe('Thanks @Dana for the fix');
+    expect(spansOf(read)).toEqual(['@Dana']);
+  });
+
+  it('keeps a TipTap mention chip in the text as its label', () => {
+    const read = readOf('<p>Hi <span data-type="mention" data-id="dana">Dana Lee</span>, welcome</p>');
+
+    expect(read.text).toBe('Hi Dana Lee, welcome');
+    expect(spansOf(read)).toEqual(['Dana Lee']);
+  });
+
+  it('reads a chip that holds markup and line breaks as its label on one line', () => {
+    const read = readOf(
+      '<p>See <span contenteditable="false">\n  <span class="icon"><svg></svg></span><span>report\n.pdf</span><div>final</div></span> now</p>',
+    );
+
+    expect(read.text).toBe('See report .pdffinal now');
+    expect(spansOf(read)).toEqual(['report .pdffinal']);
+  });
+
+  it('keeps inline code in the text and flags the whole of it', () => {
+    const read = readOf('<p>I ran <code>refresh_all.py</code> twice</p>');
+
+    expect(read.text).toBe('I ran refresh_all.py twice');
+    expect(spansOf(read)).toEqual(['refresh_all.py']);
+  });
+
+  it('joins neighbouring never-flag content into one span and keeps others apart', () => {
+    const read = readOf('<p><code>a</code><code>b</code> and <code>c</code></p>');
+
+    expect(spansOf(read)).toEqual(['ab', 'c']);
+  });
+
+  it('flags nothing on a line that follows a chip', () => {
+    const read = readOf('<p>Hi <code>a</code></p><p>b</p>');
+
+    expect(read.text).toBe('Hi a\nb');
+    expect(read.neverFlag).toEqual([{ start: 3, end: 4 }]);
+  });
+
+  it('leaves a block-level element a block, whatever its contenteditable', () => {
+    const read = readOf('<p>A</p><div contenteditable="false">card</div><p>B</p>');
+
+    expect(read.text).toBe('A\ncard\nB');
+    expect(read.neverFlag).toEqual([]);
+  });
+
+  it('adds nothing for an empty chip', () => {
+    const read = readOf('<p>A<span contenteditable="false"></span>B</p>');
+
+    expect(read.text).toBe('AB');
+    expect(read.neverFlag).toEqual([]);
+  });
+
+  describe('image emoji', () => {
+    it('is the alt emoji when the alt is a single emoji', () => {
+      const read = readOf('<p>Done <img data-emoji="✅" class="an1" alt="✅" src="x"> ok</p>');
+
+      expect(read.text).toBe('Done ✅ ok');
+      expect(spansOf(read)).toEqual(['✅']);
+    });
+
+    it.each([
+      ['a flag', '🇮🇩'],
+      ['a family sequence', '👨‍👩‍👧'],
+      ['a skin-toned emoji', '👍🏽'],
+    ])('keeps %s whole', (_, alt) => {
+      const read = readOf(`<p>a <img class="emoji" alt="${alt}"> b</p>`);
+
+      expect(read.text).toBe(`a ${alt} b`);
+      expect(spansOf(read)).toEqual([alt]);
+    });
+
+    it.each([
+      ['a name', 'slightly smiling face emoji'],
+      ['two emoji', '😀😀'],
+      ['an emoji and a word', '😀 smile'],
+      ['a lone digit', '1'],
+      ['empty', ''],
+    ])('is U+FFFC when the alt is %s', (_, alt) => {
+      const read = readOf(`<p>a <img class="emoji" alt="${alt}"> b</p>`);
+
+      expect(read.text).toBe(`a ${OBJECT_REPLACEMENT} b`);
+      expect(spansOf(read)).toEqual([OBJECT_REPLACEMENT]);
+    });
+
+    it.each([
+      ['inside the image', (image: HTMLElement) => image.append(BYTE_ORDER_MARK, BYTE_ORDER_MARK)],
+      ['beside the image', (image: HTMLElement) => {
+        image.before(BYTE_ORDER_MARK);
+        image.after(BYTE_ORDER_MARK);
+      }],
+    ])("is one character with Slack's U+FEFF guards %s, and offsets after it do not drift", (_, addGuards) => {
+      const host = mount('<p>Great <img class="emoji" alt="slightly smiling face emoji" src="x"> and the remaning charts.</p>');
+      addGuards(host.querySelector('img')!);
+
+      const { text, neverFlag, rangeFor } = createRichTextReader(host).read();
+
+      expect(text).toBe(`Great ${OBJECT_REPLACEMENT} and the remaning charts.`);
+      expect(neverFlag).toEqual([{ start: 6, end: 7 }]);
+      expect(textUnder(rangeFor(spanOf(text, 'remaning')))).toBe('remaning');
+      expect(textUnder(rangeFor(spanOf(text, 'Great')))).toBe('Great');
+    });
+
+    it('leaves a non-emoji image out of the text', () => {
+      const read = readOf('<p>A <img alt="chart" src="x"> B</p>');
+
+      expect(read.text).toBe('A  B');
+      expect(read.neverFlag).toEqual([]);
+    });
+
+    it('counts an emoji image inside a chip once', () => {
+      const read = readOf('<p>A <span contenteditable="false">go <img class="emoji" alt="🚀"></span> B</p>');
+
+      expect(read.text).toBe('A go 🚀 B');
+      expect(spansOf(read)).toEqual(['go 🚀']);
+    });
+  });
+
+  it('keeps the ranges of the prose around a chip on its own text nodes', () => {
+    const { host, text, rangeFor } = readOf('<p>I recieve <ts-mention contenteditable="false">@Dana</ts-mention> and recieve it</p>');
+
+    const before = rangeFor({ start: 2, end: 9 });
+    const after = rangeFor({ start: text.lastIndexOf('recieve'), end: text.lastIndexOf('recieve') + 7 });
+
+    expect(textUnder(before)).toBe('recieve');
+    expect(before.endContainer).toBe(textNodeOf(host, 'I recieve '));
+    expect(textUnder(after)).toBe('recieve');
+    expect(after.startContainer).toBe(textNodeOf(host, ' and recieve it'));
   });
 });

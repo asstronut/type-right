@@ -164,6 +164,22 @@ describe('checking what is read', () => {
     expect(page.languageTool).toHaveBeenCalled();
   });
 
+  it('draws the underlines from a newer read even when its text is the same', async () => {
+    const page = setup();
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const [before] = page.drawn()!;
+
+    page.deliver(TEXT);
+    page.languageTool.mockClear();
+
+    const [after] = page.drawn()!;
+    expect(page.underlined(TEXT)).toEqual(['recieve']);
+    expect(after!.range).not.toBe(before!.range);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(page.languageTool).not.toHaveBeenCalled();
+  });
+
   it('drops a read once the extension has reloaded', async () => {
     const page = setup();
     page.reload();
@@ -255,6 +271,37 @@ describe('the Hover card', () => {
     expect(page.hover.point.mock.calls[0]![1]).toBeUndefined();
   });
 
+  it("hears of the pointer on the last line's underline below the element's box, and of it leaving", async () => {
+    const page = setup();
+    vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 50));
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 54, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    expect(page.hitAt).toHaveBeenCalledWith(page.field, 20, 54);
+
+    document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 80, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+    expect(page.hitAt).toHaveBeenCalledOnce();
+    expect(page.hover.point.mock.calls.at(-1)![1]).toBeUndefined();
+  });
+
+  it('keeps probing when the pointer moves up from below the box onto the words', async () => {
+    const page = setup();
+    vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 50));
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 54, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+
+    page.element.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 48, bubbles: true }));
+    await vi.advanceTimersByTimeAsync(FRAME_MS);
+
+    expect(page.hitAt).toHaveBeenCalledTimes(2);
+    expect(page.hitAt).toHaveBeenLastCalledWith(page.field, 20, 48);
+  });
+
   it('closes on Escape, and when the Field changes or goes away', async () => {
     const page = setup();
     page.deliver(TEXT);
@@ -271,6 +318,21 @@ describe('the Hover card', () => {
     expect(page.hover.closeFor).toHaveBeenCalledWith(target);
     page.hover.closeFor.mockClear();
     page.field.dispose();
+    expect(page.hover.closeFor).toHaveBeenCalledWith(target);
+  });
+
+  it('stays open when a read brings the same text again, and closes for a read of new text', async () => {
+    const page = setup();
+    page.deliver(TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await page.pointAt(page.drawn()![0]!.slip);
+    const target = page.hoverTarget();
+    page.hover.closeFor.mockClear();
+
+    page.deliver(TEXT);
+    expect(page.hover.closeFor).not.toHaveBeenCalled();
+
+    page.deliver(`${TEXT} More.`);
     expect(page.hover.closeFor).toHaveBeenCalledWith(target);
   });
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { runPage, type PageStore } from './page';
 import { installHighlights } from './test-highlights';
+import { installStaticRange, textUnder } from './test-static-range';
 import type { LlmFailure } from '../../lib/engine';
 import { DEFAULT_SETTINGS, type Settings } from '../../lib/settings';
 import { EMPTY_TALLY, type SlipTally } from '../../lib/slip-tally';
@@ -30,6 +31,7 @@ const FRAME_MS = 20;
 const TEXT = 'I recieve it.';
 const UNDERLINE_BOX = new DOMRect(10, 10, 40, 16);
 const TEXTAREA_BOX = new DOMRect(0, 0, 200, 50);
+const EDITOR_BOX = new DOMRect(0, 0, 300, 100);
 
 const LLM_ON: Settings = { ...DEFAULT_SETTINGS, llmConsent: true, llmApiKey: 'test-key' };
 
@@ -144,8 +146,30 @@ function type(field: HTMLTextAreaElement, text: string): void {
   field.dispatchEvent(new Event('input'));
 }
 
+function addEditor(html: string, attributes: Record<string, string> = {}): HTMLElement {
+  const editor = document.createElement('div');
+  editor.setAttribute('contenteditable', 'true');
+  for (const [name, value] of Object.entries(attributes)) editor.setAttribute(name, value);
+  editor.innerHTML = html;
+  document.body.appendChild(editor);
+  vi.spyOn(editor, 'getBoundingClientRect').mockReturnValue(EDITOR_BOX);
+  return editor;
+}
+
+function focus(element: Element): void {
+  element.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+}
+
+function underlinedText(): string[] {
+  return underlinedRanges().map(textUnder);
+}
+
+function cardIsOpen(): boolean {
+  return document.querySelector<HTMLElement>('type-right-card')?.style.display === 'block';
+}
+
 /** Rests the pointer on the Field's underline until the Hover card opens. */
-async function openHoverCard(field: HTMLTextAreaElement): Promise<void> {
+async function openHoverCard(field: HTMLElement): Promise<void> {
   field.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 20 }));
   await vi.advanceTimersByTimeAsync(FRAME_MS + HOVER_OPEN_MS);
 }
@@ -156,6 +180,7 @@ let removeHighlights: () => void;
 beforeEach(() => {
   vi.useFakeTimers();
   removeHighlights = installHighlights();
+  installStaticRange();
   Object.defineProperty(HTMLTextAreaElement.prototype, 'createValueRange', {
     configurable: true,
     value: (start: number, end: number) => ({
@@ -418,6 +443,235 @@ describe('a textarea that already holds text', () => {
     expect(page.worker.languageTool).toHaveBeenCalledOnce();
     expect(page.worker.languageTool).toHaveBeenCalledWith(TEXT);
     expect(underlinedRanges()).toHaveLength(1);
+  });
+});
+
+describe('a Rich editor', () => {
+  it('becomes a Field when it is focused, checks its text and underlines its Slips', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+    expect(typeRightElements()).toEqual([]);
+    expect(page.worker.languageTool).not.toHaveBeenCalled();
+
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(badges()).toHaveLength(1);
+    expect(page.worker.languageTool).toHaveBeenCalledWith(TEXT);
+    expect(underlinedText()).toEqual(['recieve']);
+  });
+
+  it('is one Field however often it is focused', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+
+    focus(editor);
+    focus(editor);
+    focus(editor.firstElementChild!);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(badges()).toHaveLength(1);
+    expect(page.worker.languageTool).toHaveBeenCalledOnce();
+  });
+
+  it('is the outer editing host when an editable inside it is focused', async () => {
+    const editor = addEditor('<p>Outer recieve.</p><div contenteditable="true"><p>Inner text.</p></div>');
+    const page = createPage();
+
+    focus(editor.querySelector('div > p')!);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    focus(editor);
+
+    expect(badges()).toHaveLength(1);
+    expect(page.worker.languageTool).toHaveBeenCalledOnce();
+    expect(page.worker.languageTool).toHaveBeenCalledWith('Outer recieve.\nInner text.');
+  });
+
+  const inside = (className: string) => (editor: HTMLElement) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = className;
+    editor.before(wrapper);
+    wrapper.append(editor);
+  };
+
+  it.each<[string, (editor: HTMLElement) => void]>([
+    ['a combobox', (editor) => editor.setAttribute('role', 'combobox')],
+    ['a searchbox', (editor) => editor.setAttribute('role', 'searchbox')],
+    ['single-line by aria-multiline', (editor) => editor.setAttribute('aria-multiline', 'false')],
+    ['aria-hidden', (editor) => editor.setAttribute('aria-hidden', 'true')],
+    ['inert', (editor) => editor.setAttribute('inert', '')],
+    ['without a box', (editor) => void vi.spyOn(editor, 'getBoundingClientRect').mockReturnValue(new DOMRect())],
+    ['inside a CodeMirror editor', inside('cm-editor')],
+    ['inside a Monaco editor', inside('monaco-editor')],
+    ['inside an Ace editor', inside('ace_editor')],
+  ])('is no Field when it is %s', async (_, makeUnfit) => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    makeUnfit(editor);
+    const page = createPage();
+
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+
+    expect(typeRightElements()).toEqual([]);
+    expect(underlinedRanges()).toEqual([]);
+    expect(page.worker.languageTool).not.toHaveBeenCalled();
+  });
+
+  it('is judged again on its next focus when it was out of sight', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`, { 'aria-hidden': 'true' });
+    const page = createPage();
+    focus(editor);
+    expect(badges()).toEqual([]);
+
+    editor.removeAttribute('aria-hidden');
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(badges()).toHaveLength(1);
+    expect(page.worker.languageTool).toHaveBeenCalledWith(TEXT);
+  });
+
+  it('is a Field at once when it has focus before Type Right starts, and no other editor is', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    addEditor('<p>Other recieve.</p>');
+    editor.focus();
+
+    const page = createPage();
+
+    expect(badges()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(page.worker.languageTool).toHaveBeenCalledOnce();
+    expect(page.worker.languageTool).toHaveBeenCalledWith(TEXT);
+  });
+
+  it('is checked again when its text nodes are edited', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    page.worker.languageTool.mockClear();
+
+    editor.querySelector('p')!.firstChild!.textContent = 'Another recieve.';
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(page.worker.languageTool).toHaveBeenCalledWith('Another recieve.');
+    expect(underlinedText()).toEqual(['recieve']);
+  });
+
+  it('draws its underlines again in the new nodes when the site re-renders the same text', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const [before] = underlinedRanges();
+
+    editor.querySelector('p')!.replaceChildren(document.createTextNode(TEXT));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const after = underlinedRanges();
+    expect(after).toHaveLength(1);
+    expect(after[0]).not.toBe(before);
+    expect(after[0]!.startContainer).toBe(editor.querySelector('p')!.firstChild);
+    expect(underlinedText()).toEqual(['recieve']);
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+    expect(page.worker.languageTool).toHaveBeenCalledOnce();
+  });
+
+  it('keeps its Hover card open through a re-render of the same text, and closes it for new text', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    createPage();
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await openHoverCard(editor);
+    expect(cardIsOpen()).toBe(true);
+
+    editor.querySelector('p')!.replaceChildren(document.createTextNode(TEXT));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cardIsOpen()).toBe(true);
+
+    editor.querySelector('p')!.firstChild!.textContent = `${TEXT} More.`;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cardIsOpen()).toBe(false);
+  });
+
+  it('ends with its editor, leaving the others as they are', async () => {
+    const leaving = addEditor(`<p>${TEXT}</p>`);
+    const staying = addEditor('<p>Also recieve.</p>');
+    const page = createPage();
+    focus(leaving);
+    focus(staying);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(badges()).toHaveLength(2);
+    expect(underlinedRanges()).toHaveLength(2);
+    leaving.querySelector('p')!.firstChild!.textContent = `${TEXT} Still recieve.`;
+    await vi.advanceTimersByTimeAsync(0);
+    vi.clearAllMocks();
+
+    leaving.remove();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(badges()).toHaveLength(1);
+    expect(underlinedRanges()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS);
+    expect(page.worker.languageTool).not.toHaveBeenCalled();
+
+    staying.querySelector('p')!.firstChild!.textContent = 'Again recieve.';
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(page.worker.languageTool).toHaveBeenCalledWith('Again recieve.');
+    expect(underlinedRanges()).toHaveLength(1);
+  });
+
+  it('stays with an editor that is moved within the page', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    const home = document.body.appendChild(document.createElement('div'));
+    home.appendChild(editor);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(badges()).toHaveLength(1);
+    expect(underlinedRanges()).toHaveLength(1);
+    editor.querySelector('p')!.firstChild!.textContent = `${TEXT} More.`;
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(page.worker.languageTool).toHaveBeenLastCalledWith(`${TEXT} More.`);
+  });
+
+  it('is a new Field when the site puts a rebuilt editor in its place', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    editor.remove();
+    const rebuilt = addEditor(`<p>${TEXT}</p>`);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(typeRightElements()).toEqual([]);
+    focus(rebuilt);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(badges()).toHaveLength(1);
+    expect(underlinedText()).toEqual(['recieve']);
+    expect(page.worker.languageTool).toHaveBeenCalledTimes(2);
+  });
+
+  it('is left alone once Type Right has left the page', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    page.ctx.notifyInvalidated();
+    expect(typeRightElements()).toEqual([]);
+    vi.clearAllMocks();
+    editor.querySelector('p')!.firstChild!.textContent = 'More recieve.';
+    focus(addEditor(`<p>${TEXT}</p>`));
+    await vi.advanceTimersByTimeAsync(LONG_AFTER_MS);
+
+    expect(typeRightElements()).toEqual([]);
+    expect(page.worker.languageTool).not.toHaveBeenCalled();
   });
 });
 

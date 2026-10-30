@@ -1,5 +1,6 @@
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createField, type Field, type FieldDeps } from './fields/field';
+import { canBeRichField, editingHostOf, richEditorAdapter } from './fields/rich-editor';
 import { textareaAdapter } from './fields/textarea';
 import { HoverController } from './hover';
 import { createUnderlines } from './underlines';
@@ -45,9 +46,10 @@ interface Running {
 }
 
 /**
- * Runs Type Right on the page: attaches to every textarea while the site is
- * on, and leaves the page entirely once the extension reloads, updates or is
- * removed, since the page can no longer reach the background worker then.
+ * Runs Type Right on the page: attaches to every textarea and to each Rich
+ * editor the user focuses while the site is on, and leaves the page entirely
+ * once the extension reloads, updates or is removed, since the page can no
+ * longer reach the background worker then.
  */
 export function runPage(options: PageOptions): void {
   const { ctx, hostname, store } = options;
@@ -107,7 +109,7 @@ export function runPage(options: PageOptions): void {
   /** Set while Type Right is running on this page. */
   let running: Running | null = null;
 
-  /** Attaches to every textarea on the page. */
+  /** Attaches to every textarea on the page, and to each Rich editor as it is focused. */
   function start(): Running {
     const fields = new Map<HTMLElement, Field>();
     const underlines = createUnderlines();
@@ -129,11 +131,23 @@ export function runPage(options: PageOptions): void {
       fields.set(textarea, createField(textareaAdapter(textarea), deps));
     }
 
+    function attachRichEditor(host: HTMLElement | null): void {
+      if (!host || fields.has(host) || !canBeRichField(host)) return;
+      fields.set(host, createField(richEditorAdapter(host), deps));
+    }
+
     function attachAllWithin(root: ParentNode): void {
       root.querySelectorAll('textarea').forEach(attach);
     }
 
     attachAllWithin(document);
+
+    const listening = new AbortController();
+    document.addEventListener('focusin', (event) => attachRichEditor(editingHostOf(event.target)), {
+      capture: true,
+      signal: listening.signal,
+    });
+    attachRichEditor(editingHostOf(document.activeElement));
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -153,6 +167,7 @@ export function runPage(options: PageOptions): void {
 
     return {
       stop() {
+        listening.abort();
         observer.disconnect();
         fields.forEach((field) => field.dispose());
         underlines.dispose();

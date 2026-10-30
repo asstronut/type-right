@@ -1,6 +1,6 @@
 import { createBadge } from '../badge';
 import type { HoverController, HoverTarget } from '../hover';
-import type { Underlines } from '../underlines';
+import { UNDERLINE_REACH_PX, type Underlines } from '../underlines';
 import { createFieldChecker, type CheckEngines, type CheckSite } from '../../../lib/checker';
 import type { LlmHealth, PageLlmHealth } from '../../../lib/llm-health';
 import type { TextSpan } from '../../../lib/slip-tracker';
@@ -93,16 +93,30 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     frame = undefined;
   }
   const { signal } = listeners;
-  element.addEventListener('mousemove', (event) => {
+  function probe(event: MouseEvent): void {
     pointer = { x: event.clientX, y: event.clientY };
     frame ??= requestAnimationFrame(() => {
       frame = undefined;
       hover.point(target, underlines.hitAt(field, pointer.x, pointer.y));
     });
-  }, { passive: true, signal });
-  element.addEventListener('mouseleave', () => {
+  }
+  function leave(): void {
     cancelFrame();
     hover.point(target, undefined);
+  }
+  element.addEventListener('mousemove', probe, { passive: true, signal });
+  element.addEventListener('mouseleave', leave, { signal });
+  let underBox = false;
+  document.addEventListener('mousemove', (event) => {
+    const wasUnderBox = underBox;
+    const inElement = event.target instanceof Node && element.contains(event.target);
+    underBox = !inElement && isUnderBox(element, event);
+    if (underBox) probe(event);
+    else if (wasUnderBox && !inElement) leave();
+  }, { passive: true, signal });
+  document.documentElement.addEventListener('mouseleave', () => {
+    if (underBox) leave();
+    underBox = false;
   }, { signal });
   element.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') hover.close();
@@ -125,10 +139,16 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
 
   adapter.watch((read) => {
     if (deps.noticeReload()) return;
+    if (read.text !== latest?.text) hover.closeFor(target);
     latest = read;
-    hover.closeFor(target);
     render(checker.update(read.text));
   }, signal);
 
   return field;
+}
+
+/** Pointer coordinates are whole pixels, so a box edge between two pixels counts from the pixel it falls in. */
+function isUnderBox(element: HTMLElement, { clientX, clientY }: MouseEvent): boolean {
+  const box = element.getBoundingClientRect();
+  return box.width > 0 && clientX >= box.left && clientX <= box.right && clientY >= Math.floor(box.bottom) && clientY <= box.bottom + UNDERLINE_REACH_PX;
 }

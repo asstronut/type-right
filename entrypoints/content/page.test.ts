@@ -462,6 +462,43 @@ describe('a Rich editor', () => {
     expect(underlinedText()).toEqual(['recieve']);
   });
 
+  describe('with a signature after the typed text', () => {
+    const SIGNATURE =
+      '<div><br></div><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature"><div dir="ltr">Sender Name<br></div></div>';
+
+    it('does not send the line being typed to the LLM or the Tally', async () => {
+      const editor = addEditor(`<div>I recieve it</div>${SIGNATURE}`);
+      const page = createPage();
+      focus(editor);
+
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS + DEBOUNCE_MS);
+
+      expect(page.worker.languageTool).toHaveBeenCalledWith('I recieve it');
+      expect(page.worker.llm).not.toHaveBeenCalled();
+      expect(page.worker.recordSlips).not.toHaveBeenCalled();
+    });
+
+    it('sends the line once a full stop finishes it', async () => {
+      const editor = addEditor(`<div>I recieve it.</div>${SIGNATURE}`);
+      const page = createPage();
+      focus(editor);
+
+      await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS + DEBOUNCE_MS);
+
+      expect(page.worker.llm).toHaveBeenCalledWith('I recieve it.');
+    });
+  });
+
+  it('counts a line followed by a code block at the end as a Finished sentence', async () => {
+    const editor = addEditor('<div>I recieve it</div><pre>code</pre>');
+    const page = createPage();
+    focus(editor);
+
+    await vi.advanceTimersByTimeAsync(LLM_DEBOUNCE_MS + DEBOUNCE_MS);
+
+    expect(page.worker.llm).toHaveBeenCalledWith('I recieve it');
+  });
+
   it('is one Field however often it is focused', async () => {
     const editor = addEditor(`<p>${TEXT}</p>`);
     const page = createPage();

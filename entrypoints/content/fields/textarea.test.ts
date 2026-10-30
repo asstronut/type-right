@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { FieldRead } from './field';
 import { textareaAdapter } from './textarea';
 import { makeSlipId, type Slip } from '../../../lib/slips';
@@ -57,19 +57,31 @@ it('replaces the flagged words without the editing command too, and the fix is r
   document.execCommand = () => false;
   type(TEXT);
 
-  await textareaAdapter(textarea).replace(SLIP, 'recieve', 'receive');
+  const outcome = await textareaAdapter(textarea).replace(SLIP, 'recieve', 'receive');
 
+  expect(outcome).toBe('replaced');
   expect(textarea.value).toBe('I will receive it.');
   expect(reads.at(-1)!.text).toBe('I will receive it.');
 });
 
-it('leaves the text alone once the flagged words are gone', async () => {
+it('leaves the text alone once the flagged words are gone, and says the Slip is stale', async () => {
   type(TEXT);
   textarea.value = '';
 
-  await textareaAdapter(textarea).replace(SLIP, 'recieve', 'receive');
+  const outcome = await textareaAdapter(textarea).replace(SLIP, 'recieve', 'receive');
 
+  expect(outcome).toBe('stale');
   expect(textarea.value).toBe('');
+});
+
+it('replaces through the editing command when there is one', async () => {
+  document.execCommand = vi.fn(() => true);
+  type(TEXT);
+
+  const outcome = await textareaAdapter(textarea).replace(SLIP, 'recieve', 'receive');
+
+  expect(outcome).toBe('replaced');
+  expect(document.execCommand).toHaveBeenCalledWith('insertText', false, 'receive');
 });
 
 it('reads composing while an IME has uncommitted text, then once more with composing false at compositionend', () => {

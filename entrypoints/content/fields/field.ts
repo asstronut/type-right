@@ -15,6 +15,17 @@ export interface FieldRead {
   rangeFor(span: TextSpan): AbstractRange;
 }
 
+export type ApplyResult = 'accepted' | 'unchanged' | 'changedWrongly' | 'inconclusive' | 'stale';
+
+/** What an adapter's `replace` did: refused because the live text moved on, made the edit for certain (textarea), or tried an edit the editor may not have kept (Rich editor). */
+export type ReplaceOutcome = 'stale' | 'replaced' | 'attempted';
+
+export const APPLY_VERDICT_MS = 150;
+
+const USER_EDIT_EVENTS = ['beforeinput', 'keydown', 'paste', 'drop', 'cut'] as const;
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
+const isModifierOnly = (event: Event) => event instanceof KeyboardEvent && MODIFIER_KEYS.has(event.key);
+
 /** What differs between the kinds of Field (textarea, Rich editor); the rest is `createField`. */
 export interface FieldAdapter {
   readonly element: HTMLElement;
@@ -22,7 +33,7 @@ export interface FieldAdapter {
   watch(onRead: (read: FieldRead) => void, signal: AbortSignal): void;
   canApply(slip: Slip): boolean;
   /** Replaces the Slip's text with `suggestion`, unless the element's live text there no longer reads `flagged`. */
-  replace(slip: Slip, flagged: string, suggestion: string): Promise<void>;
+  replace(slip: Slip, flagged: string, suggestion: string): Promise<ReplaceOutcome>;
 }
 
 export interface FieldDeps {
@@ -35,6 +46,8 @@ export interface FieldDeps {
   onSlipsSeen(sightings: SlipSighting[]): void;
   /** Asked on every read: true once the extension reloaded, and the read is dropped. */
   noticeReload(): boolean;
+  /** An Apply in a Rich editor ended `unchanged` or `changedWrongly`: the page learns that editors there refuse fixes. */
+  onApplyRefused(): void;
 }
 
 export interface Field {
@@ -79,14 +92,52 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
   const target: HoverTarget = {
     textOf: (slip) => latest?.text.slice(slip.start, slip.end) ?? '',
     canApply: (slip) => adapter.canApply(slip),
-    apply(slip, flagged, suggestion) {
-      void adapter.replace(slip, flagged, suggestion);
+    async apply(slip, flagged, suggestion) {
+      const before = latest?.text;
+      if (before === undefined || before.slice(slip.start, slip.end) !== flagged) return 'stale';
+      const typing = watchForTyping();
+      let interfered: boolean;
+      try {
+        const outcome = await adapter.replace(slip, flagged, suggestion);
+        if (outcome !== 'attempted') return outcome === 'stale' ? 'stale' : 'accepted';
+        await new Promise((resolve) => setTimeout(resolve, APPLY_VERDICT_MS));
+      } catch {
+        return 'inconclusive';
+      } finally {
+        interfered = typing.stop();
+      }
+      if (interfered || signal.aborted || !latest) return 'inconclusive';
+      const expected = before.slice(0, slip.start) + suggestion + before.slice(slip.end);
+      if (latest.text === expected) return 'accepted';
+      deps.onApplyRefused();
+      return latest.text === before ? 'unchanged' : 'changedWrongly';
     },
     ignore(slip) {
       checker.ignore(slip.id);
     },
     addToDictionary: deps.addToDictionary,
   };
+
+  let interference: { happened: boolean } | undefined;
+  function watchForTyping(): { stop(): boolean } {
+    const watching = { happened: false };
+    const waiting = new AbortController();
+    const note = () => void (watching.happened = true);
+    interference = watching;
+    // The fallback `execCommand('insertText')` fires a trusted `input` (and no `beforeinput`), so `input` would mistake the fix itself for typing.
+    // Editors that handle a key in `keydown` and cancel it (Enter in ProseMirror, Quill, Draft) fire no `beforeinput` at all.
+    for (const type of USER_EDIT_EVENTS) {
+      element.addEventListener(type, (event) => event.isTrusted && !isModifierOnly(event) && note(), { signal: waiting.signal });
+    }
+    element.addEventListener('compositionstart', note, { signal: waiting.signal });
+    return {
+      stop() {
+        waiting.abort();
+        interference = undefined;
+        return watching.happened;
+      },
+    };
+  }
 
   let frame: number | undefined;
   let pointer = { x: 0, y: 0 };
@@ -143,6 +194,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     if (deps.noticeReload()) return;
     if (read.text !== latest?.text) hover.closeFor(target);
     latest = read;
+    if (read.composing && interference) interference.happened = true;
     render(checker.update(read.text, { neverFlag: read.neverFlag, composing: read.composing }));
   }, signal);
 

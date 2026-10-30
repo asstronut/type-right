@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
+import { APPLY_VERDICT_MS } from './fields/field';
 import { runPage, type PageStore } from './page';
 import { installHighlights } from './test-highlights';
 import { installStaticRange, textUnder } from './test-static-range';
@@ -176,9 +177,26 @@ async function openHoverCard(field: HTMLElement): Promise<void> {
 
 let contexts: ContentScriptContext[] = [];
 let removeHighlights: () => void;
+let cardRoots: ShadowRoot[];
+
+function card(): ShadowRoot {
+  return cardRoots.at(-1)!;
+}
+
+function offersApply(): boolean {
+  card().querySelector<HTMLButtonElement>('.show-answer')?.click();
+  return card().querySelector('button.apply') !== null;
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
+  cardRoots = [];
+  const attachShadow = Element.prototype.attachShadow;
+  vi.spyOn(Element.prototype, 'attachShadow').mockImplementation(function (this: Element, init) {
+    const root = attachShadow.call(this, init);
+    if (this.localName === 'type-right-card') cardRoots.push(root);
+    return root;
+  });
   removeHighlights = installHighlights();
   installStaticRange();
   Object.defineProperty(HTMLTextAreaElement.prototype, 'createValueRange', {
@@ -199,6 +217,7 @@ afterEach(() => {
   runtime.id = 'type-right';
   document.body.replaceChildren();
   Reflect.deleteProperty(HTMLTextAreaElement.prototype, 'createValueRange');
+  Reflect.deleteProperty(document, 'execCommand');
   removeHighlights();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -726,5 +745,77 @@ describe('the underlines when the extension goes away', () => {
 
     expect(CSS.highlights.get('type-right-spelling')).toBe(foreign);
     expect(CSS.highlights.has('type-right-grammar')).toBe(false);
+  });
+});
+
+describe('Apply after an editor refused a fix', () => {
+  async function focusAndCheck(editor: HTMLElement): Promise<void> {
+    focus(editor);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+  }
+
+  async function refuseAnApplyIn(editor: HTMLElement): Promise<void> {
+    document.execCommand = vi.fn(() => true);
+    await openHoverCard(editor);
+    expect(offersApply()).toBe(true);
+    card().querySelector<HTMLButtonElement>('button.apply')!.click();
+    await vi.advanceTimersByTimeAsync(APPLY_VERDICT_MS + FRAME_MS);
+  }
+
+  it('is offered for a word in one text node of a Rich editor, and not for one split by formatting', async () => {
+    const whole = addEditor(`<p>${TEXT}</p>`);
+    const split = addEditor('<p>I rec<b>iev</b>e it.</p>');
+    createPage();
+    await focusAndCheck(whole);
+    await focusAndCheck(split);
+
+    await openHoverCard(whole);
+    expect(offersApply()).toBe(true);
+    await openHoverCard(split);
+    expect(underlinedText()).toContain('recieve');
+    expect(offersApply()).toBe(false);
+  });
+
+  it('is gone from every Rich editor on the page, a rebuilt one included, while textareas still offer it', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const other = addEditor('<p>Also recieve.</p>');
+    const textarea = addFilledField(TEXT);
+    createPage();
+    await focusAndCheck(editor);
+    await focusAndCheck(other);
+
+    await refuseAnApplyIn(editor);
+
+    expect(cardIsOpen()).toBe(true);
+    expect(card().querySelector('.note')!.textContent).toBe("This editor didn't take the fix. Retype it yourself.");
+    expect(card().querySelector('button.apply')).toBeNull();
+    await openHoverCard(other);
+    expect(offersApply()).toBe(false);
+
+    editor.remove();
+    const rebuilt = addEditor(`<p>${TEXT}</p>`);
+    await vi.advanceTimersByTimeAsync(0);
+    await focusAndCheck(rebuilt);
+    await openHoverCard(rebuilt);
+    expect(offersApply()).toBe(false);
+
+    type(textarea, TEXT);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    await openHoverCard(textarea);
+    expect(offersApply()).toBe(true);
+  });
+
+  it('is gone again after Type Right is turned off and on for the site', async () => {
+    const editor = addEditor(`<p>${TEXT}</p>`);
+    const page = createPage();
+    await focusAndCheck(editor);
+    await refuseAnApplyIn(editor);
+
+    page.changeSettings({ disabledSites: [HOSTNAME] });
+    page.changeSettings({ disabledSites: [] });
+    await focusAndCheck(editor);
+    await openHoverCard(editor);
+
+    expect(offersApply()).toBe(false);
   });
 });

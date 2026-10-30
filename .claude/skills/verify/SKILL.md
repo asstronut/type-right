@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Drive the real Type Right Chrome extension (built from this checkout) in a throwaway headless Microsoft Edge to prove a change works the way a user sees it. Covers underlines, the Hover card, Ignore here, the Dictionary, the Popup Tally, and the Options page. Use after changing anything under entrypoints/ or lib/, or whenever unit tests are not enough proof. Windows only.
+description: Drive the real Type Right Chrome extension (built from this checkout) in a throwaway headless Microsoft Edge to prove a change works the way a user sees it. Covers underlines, the Hover card, Ignore here, the Dictionary, the Popup Tally, the Options page, and the Rich editor fixture matrix. Use after changing anything under entrypoints/ or lib/, or whenever unit tests are not enough proof. Windows only.
 ---
 
 # Verify Type Right in a real browser
@@ -32,8 +32,9 @@ node .claude/skills/verify/scripts/verify.mjs launch
 What `launch` does:
 
 1. Runs `npm run build`. Launch always rebuilds, because a stale build looks exactly like the pre-fix bug.
-2. Starts the test page server, a detached `verify.mjs serve`, on `127.0.0.1:<free port>`.
-3. Starts headless Edge with a new profile in `%TEMP%\type-right-verify-*`, CDP on a free port, and the test page as its first tab.
+2. Runs `npm run build:fixtures`, which bundles the Rich editor fixture pages into `test-page/rich/` (ignored by Git).
+3. Starts the test page server, a detached `verify.mjs serve`, on `127.0.0.1:<free port>`.
+4. Starts headless Edge with a new profile in `%TEMP%\type-right-verify-*`, CDP on a free port, and the test page as its first tab.
 
 `launch --dark` starts Edge with `--force-dark-mode`, so extension pages render their `prefers-color-scheme: dark` styles. Clicking a `<select>` opens its native list, and screenshots include it.
 
@@ -64,6 +65,7 @@ It checks:
 - the instance is recorded
 - the build is newer than every non-test file under `entrypoints/` and `lib/` (if not: `cleanup`, then `launch`)
 - the test page is served
+- the Rich editor fixture pages are built and served
 - the CDP port belongs to this run's Edge (its command line names our profile)
 - the extension service worker answers with its manifest version
 - every test page textarea has an overlay
@@ -71,7 +73,7 @@ It checks:
 
 ## Drive
 
-The test page has two textareas: field `0` (plain) and field `1` (short and scrollable). Field-scoped commands take `--field N`, which defaults to 0. Tab-scoped commands take `--tab <url substring | options | popup | consent>`, which defaults to the test page.
+The test page has three textareas: field `0` (plain), field `1` (short and scrollable) and field `2` (taller than the window, under a sticky footer). Field-scoped commands take `--field N`, which defaults to 0. Tab-scoped commands take `--tab <url substring | options | popup | consent>`, which defaults to the test page.
 
 | Command | What it does, as a user would |
 | --- | --- |
@@ -87,6 +89,8 @@ The test page has two textareas: field `0` (plain) and field `1` (short and scro
 | `click "<css selector>" --tab <tab>` | Real mouse click on an element of an extension page (Options and Consent buttons). Scrolls it into view first. |
 | `screenshot <name> [--tab <tab>]` | Saves `<name>.png` into the evidence dir. |
 | `stub-llm <replies.json>` | Answers the service worker's LLM requests (GLM and Gemini) from a file instead of the Provider, until `cleanup`. The file maps each sentence to the entries the prompt asks the model for (`quote`, `kind`, `type`, `explanation`, `correction`); any other sentence gets none. Each answer is logged with whether the prompt asked for Translation Slips. |
+| `stub-lt <replies.json>` | Answers the service worker's LanguageTool requests from a file instead of the public API, until `cleanup`. The file maps a phrase to the Slip it stands for (`kind`, `type`, `explanation`, `suggestions`). Every whole-word occurrence in a request becomes a match, and each answer is logged as `stub-lt answered`. |
+| `rich-editors [--column <names>] [--row <names>]` | Drives the Rich editor fixtures and the test page's textareas through the row × column matrix in [features/rich-editors.md](features/rich-editors.md). It prints pass, fail, error or n/a per cell, with `stub-lt` on for the run. Names are comma-separated. It exits 1 if any cell is `fail` or `error`. |
 | `eval "<js>" [--tab <tab>]`, `sw-eval "<js>"` | Inspection only: read the page or the service worker, for example `chrome.storage.local.get(null)`. Never use them to cause the behavior under test. |
 
 Stable handles:
@@ -112,7 +116,7 @@ A proof needs:
 - **The real user path.** Type with keystrokes, hover with the mouse, click buttons, save the Options form. Setting storage or calling internals with `eval` / `sw-eval` is not proof; use them only to read a second view.
 - **The action and its result.** For example: `type`, then `slips --wait`, `hover`, `click-card`, `value`, plus a screenshot of the card or field.
 - **Side effects through a second view.** Words added to the Dictionary show up in the Options `#dictionary` list. The Tally shows up in Popup `#counts`. Site lists show up in the test page's overlays disappearing, and can be read back with `sw-eval "chrome.storage.local.get(null)"`.
-- **Real network.** LanguageTool is the real public API: no mocks. The LLM is exercised either with a key the user has approved for the run, or with `stub-llm` and a dummy key (see [features/llm-check.md](features/llm-check.md)). A stubbed run proves what the extension does with a reply, not what the model replies; `npm run eval:llm` covers that.
+- **Real network.** LanguageTool is the real public API, except under `stub-lt`, which `rich-editors` turns on for its own run. The LLM is exercised either with a key the user has approved for the run, or with `stub-llm` and a dummy key (see [features/llm-check.md](features/llm-check.md)). A stubbed run proves what the extension does with a reply, not what the model replies; `npm run eval:llm` covers that.
 
 ## Cleanup
 

@@ -10,7 +10,7 @@ interface Segment {
 }
 
 export interface RichTextReader {
-  read(): Omit<FieldRead, 'composing'>;
+  read(changes: readonly MutationRecord[]): Omit<FieldRead, 'composing'>;
 }
 
 export interface RegionRules {
@@ -32,15 +32,19 @@ interface Regions {
   neverFlag: string;
 }
 
+type Blocks = WeakMap<Element, Line[]>;
+
 export function createRichTextReader(host: HTMLElement, regionRules: RegionRules = REGION_RULES): RichTextReader {
   const regions = {
     notChecked: [...regionRules.notChecked, ...regionRules.trailing].join(','),
     trailing: regionRules.trailing.join(','),
     neverFlag: regionRules.neverFlag.join(','),
   };
+  const blocks: Blocks = new WeakMap();
   return {
-    read() {
-      const { text, segments, neverFlag } = layOut(endAtLastCheckedLine(linesOf(host, regions)));
+    read(changes) {
+      for (const change of changes) forgetChanged(host, blocks, change);
+      const { text, segments, neverFlag } = layOut(endAtLastCheckedLine(linesOf(host, regions, blocks)));
       return { text, neverFlag, rangeFor: (span) => rangeOver(host, segments, span) };
     },
   };
@@ -137,14 +141,30 @@ function piecesOf(node: Text): Piece[] {
 
 const textOf = (line: Line): string => line.map((piece) => piece.text).join('');
 
-function linesOf(block: Element, regions: Regions): Line[] {
-  const items = itemsOf(block, regions);
-  const hasChildBlocks = items.some((item) => item.kind === 'block');
-  const lines = items.flatMap((item) => (item.kind === 'run' && item.isGap && hasChildBlocks ? [] : item.lines));
-  return lines.length ? lines : [[]];
+function forgetChanged(host: HTMLElement, blocks: Blocks, change: MutationRecord): void {
+  for (let node: Node | null = change.target; node && node !== host.parentNode; node = node.parentNode) {
+    if (node instanceof Element) blocks.delete(node);
+  }
+  // A node can change while it is out of the editor, where no mutation is seen, and then come back.
+  for (const added of change.addedNodes) {
+    if (!(added instanceof Element)) continue;
+    blocks.delete(added);
+    for (const inside of added.querySelectorAll('*')) blocks.delete(inside);
+  }
 }
 
-function itemsOf(block: Element, regions: Regions): Item[] {
+function linesOf(block: Element, regions: Regions, blocks: Blocks): Line[] {
+  const known = blocks.get(block);
+  if (known) return known;
+  const items = itemsOf(block, regions, blocks);
+  const hasChildBlocks = items.some((item) => item.kind === 'block');
+  const lines = items.flatMap((item) => (item.kind === 'run' && item.isGap && hasChildBlocks ? [] : item.lines));
+  const read = lines.length ? lines : [[]];
+  blocks.set(block, read);
+  return read;
+}
+
+function itemsOf(block: Element, regions: Regions, blocks: Blocks): Item[] {
   const items: Item[] = [];
   let run: Run | undefined;
 
@@ -162,13 +182,22 @@ function itemsOf(block: Element, regions: Regions): Item[] {
         run.current.push(...pieces);
         run.endsWithBreak = false;
       } else if (child instanceof Element) {
+        const known = blocks.get(child);
+        if (known) {
+          endRun();
+          items.push({ kind: 'block', lines: known });
+          continue;
+        }
         switch (classify(child, regions)) {
           case 'skip':
             break;
-          case 'region':
+          case 'region': {
             endRun();
-            items.push({ kind: 'block', lines: [standIn(matches(child, regions.trailing))] });
+            const lines = [standIn(matches(child, regions.trailing))];
+            blocks.set(child, lines);
+            items.push({ kind: 'block', lines });
             break;
+          }
           case 'chip': {
             const label = labelOf(child, regions);
             if (!label.length) break;
@@ -186,7 +215,7 @@ function itemsOf(block: Element, regions: Regions): Item[] {
             break;
           case 'block':
             endRun();
-            items.push({ kind: 'block', lines: linesOf(child, regions) });
+            items.push({ kind: 'block', lines: linesOf(child, regions, blocks) });
             break;
         }
       }

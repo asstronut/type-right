@@ -27,15 +27,15 @@ export function richEditorAdapter(host: HTMLElement): FieldAdapter {
 
     watch(onRead, signal) {
       let composing = false;
-      const deliver = () => onRead({ ...reader.read(), composing });
+      const deliver = (changes: readonly MutationRecord[]) => onRead({ ...reader.read(changes), composing });
+      // Every batch is read again even when the text is the same: editors re-render nodes with identical text, which strands the ranges on the old nodes.
+      const observer = new MutationObserver(deliver);
       host.addEventListener('compositionstart', () => (composing = true), { signal });
       host.addEventListener('compositionend', () => {
         composing = false;
-        deliver();
+        deliver(observer.takeRecords());
       }, { signal });
-      deliver();
-      // Every batch is read again even when the text is the same: editors re-render nodes with identical text, which strands the ranges on the old nodes.
-      const observer = new MutationObserver(deliver);
+      deliver([]);
       observer.observe(host, { childList: true, characterData: true, subtree: true });
       signal.addEventListener('abort', () => observer.disconnect(), { once: true });
     },

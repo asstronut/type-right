@@ -71,3 +71,14 @@ it('leaves the text alone once the flagged words are gone', async () => {
 
   expect(textarea.value).toBe('');
 });
+
+it('reads composing while an IME has uncommitted text, then once more with composing false at compositionend', () => {
+  textarea.value = 'nihao';
+  textarea.dispatchEvent(new InputEvent('input', { isComposing: true }));
+  expect(reads.map((read) => read.composing)).toEqual([true]);
+
+  textarea.dispatchEvent(new CompositionEvent('compositionend', { data: 'nihao' }));
+
+  expect(reads.map((read) => read.composing)).toEqual([true, false]);
+  expect(reads.at(-1)!.text).toBe('nihao');
+});

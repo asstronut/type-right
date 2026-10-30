@@ -117,6 +117,23 @@ describe('a Rich editor adapter', () => {
     expect(textUnder(after)).toBe('recieve');
   });
 
+  it('reads composing from compositionstart on, and reports once with composing false at compositionend, even with no mutation after', async () => {
+    const host = addEditable('<p>Hi </p>');
+    watch(host);
+    reads.length = 0;
+
+    host.dispatchEvent(new CompositionEvent('compositionstart'));
+    host.firstElementChild!.firstChild!.textContent = 'Hi nihao';
+    await nextBatch();
+    host.dispatchEvent(new CompositionEvent('compositionend', { data: 'nihao' }));
+    await nextBatch();
+
+    expect(reads.map(({ text, composing }) => [text, composing])).toEqual([
+      ['Hi nihao', true],
+      ['Hi nihao', false],
+    ]);
+  });
+
   it('is not told of attribute changes', async () => {
     const host = addEditable('<p>I recieve it.</p>');
     watch(host);

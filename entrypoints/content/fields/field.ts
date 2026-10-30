@@ -141,7 +141,7 @@ export function createField(adapter: FieldAdapter, deps: FieldDeps): Field {
     if (deps.noticeReload()) return;
     if (read.text !== latest?.text) hover.closeFor(target);
     latest = read;
-    render(checker.update(read.text, { neverFlag: read.neverFlag }));
+    render(checker.update(read.text, { neverFlag: read.neverFlag, composing: read.composing }));
   }, signal);
 
   return field;
